@@ -1,5 +1,5 @@
 -- School Library Book Borrowing System
--- Target: MySQL 8.0.16+ or MariaDB 10.6+ with InnoDB and utf8mb4.
+-- Target: MySQL 8.0.16+ or MariaDB 10.4+ with InnoDB and utf8mb4.
 -- Import this file once in phpMyAdmin. It creates the database if it does not exist.
 -- Passwords are stored only as password hashes produced by the backend.
 

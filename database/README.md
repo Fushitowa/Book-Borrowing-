@@ -6,7 +6,7 @@ This schema is the relational foundation for a single school library. It support
 
 A `books` row is one cataloged title/edition. Every physical item receives its own `book_copies` row and unique barcode. Availability is derived; there is no stored `available` flag or copy count that can drift from circulation data.
 
-Target the database server to **MySQL 8.0.16+ or MariaDB 10.6+**, with InnoDB and `utf8mb4`. The minimum MySQL version ensures `CHECK` constraints are enforced. Use UTC for all `DATETIME` values; `DATETIME` itself carries no timezone. The SQL is laid out for phpMyAdmin import and includes only role and default student-loan-policy seed data. It creates no administrator account.
+Target the database server to **MySQL 8.0.16+ or MariaDB 10.4+**, with InnoDB and `utf8mb4`. XAMPP on this machine includes MariaDB 10.4.32, which supports the generated-column indexes and enforced `CHECK` constraints used here. The minimum MySQL version ensures `CHECK` constraints are enforced. Use UTC for all `DATETIME` values; `DATETIME` itself carries no timezone. The SQL is laid out for phpMyAdmin import and includes only role and default student-loan-policy seed data. It creates no administrator account.
 
 ## Tables and data dictionary
 
@@ -106,4 +106,4 @@ Use `mysql2/promise` and a single bounded connection pool configured from enviro
 - Reservations cannot allocate a copy belonging to another title; reservation-linked loans cannot name a different student.
 - Status enums and row-level CHECK constraints cover defined state combinations; cross-row state transitions are assigned to backend transactions.
 - No plaintext password, default admin account, stored availability count, or stored overdue flag is included.
-- The script was reviewed for dependency order and MySQL/MariaDB syntax against the stated minimum versions. This workspace does not have a `mysql` or `mariadb` CLI available, so it has not been executed against a live server; import it first into a disposable XAMPP database and inspect `SHOW CREATE TABLE`/foreign-key metadata before production use.
+- The script was reviewed for dependency order and MySQL/MariaDB syntax against the stated minimum versions. XAMPP's MariaDB service is not starting yet, so this script has not been executed against a live server; after resolving the port conflict, import it first into a disposable XAMPP database and inspect `SHOW CREATE TABLE`/foreign-key metadata before production use.
