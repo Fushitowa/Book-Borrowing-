@@ -31,6 +31,15 @@ app.use('/api/users', usersRouter);
 app.use('/api/reservations', reservationsRouter);
 app.use('/api/notifications', notificationsRouter);
 
+app.get('/api/health', async (_request, response) => {
+  try {
+    await verifyDatabaseConnection();
+    response.json({ status: 'ok', database: 'connected' });
+  } catch {
+    response.status(503).json({ status: 'error', database: 'disconnected' });
+  }
+});
+
 app.use((_request, response) => response.status(404).json({ error: 'The requested API route was not found.' }));
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   const code = (error as { code?: string } | null)?.code;
@@ -40,10 +49,6 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   }
   console.error('API request failed:', error instanceof Error ? error.message : 'Unknown error');
   response.status(500).json({ error: 'An unexpected server error occurred.' });
-});
-
-app.get('/api/health', (_request, response) => {
-  response.json({ status: 'ok', database: 'connected' });
 });
 
 async function startServer(): Promise<void> {

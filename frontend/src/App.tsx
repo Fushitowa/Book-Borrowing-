@@ -3,6 +3,7 @@ import { api } from './services/api';
 import { NotificationsPanel } from './components/NotificationsPanel';
 import { Toast } from './components/LibraryUI';
 import { Login } from './pages/LoginPage';
+import { CreateAccountPage } from './pages/CreateAccountPage';
 import { Overview } from './pages/OverviewPage';
 import { Catalog } from './pages/CatalogPage';
 import { Students } from './pages/StudentsPage';
@@ -26,6 +27,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>('overview');
   const [checkingSession, setCheckingSession] = useState(true);
+  const [authView, setAuthView] = useState<'login' | 'create-account'>('login');
   const [notice, setNotice] = useState<Notice>(null);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -45,21 +47,32 @@ export default function App() {
     setNotice({ kind: 'success', message: `Welcome back, ${loggedInUser.firstName}.` });
   };
 
+  const handleRegister = (newUser: User) => {
+    setUser(newUser);
+    setPage(isStaff(newUser) ? 'overview' : 'catalog');
+    setNotice({ kind: 'success', message: `Account created. Welcome to Carbonell Library, ${newUser.firstName}.` });
+  };
+
   const handleLogout = async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch { /* Clear local session even if the API is offline. */ }
     setUser(null);
     setNotice(null);
   };
 
-  if (checkingSession) return <div className="boot-screen"><div className="brand-mark">N</div><span>Opening your library…</span></div>;
-  if (!user) return <><Login onLogin={handleLogin} /><Toast notice={notice} onDismiss={() => setNotice(null)} /></>;
+  if (checkingSession) return <div className="boot-screen"><div className="brand-mark">C</div><span>Opening your library…</span></div>;
+  if (!user) return <>
+    {authView === 'login'
+      ? <Login onLogin={handleLogin} onCreateAccount={() => setAuthView('create-account')} />
+      : <CreateAccountPage onRegister={handleRegister} onBackToLogin={() => setAuthView('login')} />}
+    <Toast notice={notice} onDismiss={() => setNotice(null)} />
+  </>;
 
   const allowedItems = navItems.filter((item) => !item.staffOnly || isStaff(user));
   const activePage = allowedItems.some((item) => item.id === page) ? page : isStaff(user) ? 'overview' : 'catalog';
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-lockup"><div className="brand-mark">N</div><div><strong>Northstar</strong><span>School library</span></div></div>
+        <div className="brand-lockup"><div className="brand-mark">C</div><div><strong>Carbonell</strong><span>School library</span></div></div>
         <div className="library-switch"><span className="switch-avatar">SL</span><span><strong>School Library</strong><small>Main library</small></span><span className="chevron">⌄</span></div>
         <div className="nav-caption">WORKSPACE</div>
         <nav className="main-nav" aria-label="Main navigation">

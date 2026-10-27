@@ -10,3 +10,38 @@
 /* Account notification drawer */
 .bell-button{font-size:15px}.popover-dismiss{position:fixed;inset:62px 0 0;z-index:18;border:0;background:transparent}.notification-panel{position:fixed;z-index:19;right:29px;top:54px;width:min(350px,calc(100vw - 24px));max-height:min(480px,calc(100vh - 75px));overflow:auto;background:#fff;border:1px solid #e4ebe5;border-radius:10px;box-shadow:0 15px 45px #152b2030}.notification-heading{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:flex-start;padding:14px 15px;background:#fff;border-bottom:1px solid #edf1ed}.notification-heading strong,.notification-heading small{display:block}.notification-heading strong{font-size:12px;color:#35483c}.notification-heading small{font-size:9px;color:#929e96;margin-top:4px}.notification-heading button{border:0;background:none;color:#8b9990;font-size:19px}.notification-list{display:grid}.notification-item{display:flex;align-items:flex-start;gap:10px;width:100%;padding:12px 14px;text-align:left;background:#f8faf7;border:0;border-bottom:1px solid #eff2ef}.notification-item.read{background:#fff}.notification-item:hover{background:#f0f5ef}.notification-dot{width:7px;height:7px;flex:none;margin-top:4px;border-radius:50%;background:#72a17a}.notification-item.read .notification-dot{background:#d8e0d9}.notification-item strong,.notification-item small,.notification-item i{display:block}.notification-item strong{font-size:10px;color:#3b4e42}.notification-item small{font-size:9px;line-height:1.5;color:#7f8d83;margin-top:4px}.notification-item i{font-size:8px;font-style:normal;color:#a2aca4;margin-top:5px}.notification-empty{padding:30px 15px;text-align:center;color:#96a198;font-size:10px}.lost-action{color:#a05a4e!important;border-color:#f0ded9!important}
 @media(max-width:600px){.notification-panel{top:45px;right:8px}.popover-dismiss{inset:51px 0 58px}}
+
+/* Account creation and role selection */
+.auth-switch{display:flex;justify-content:center;align-items:center;gap:5px;margin-top:19px;color:#89978e;font-size:10px}
+.auth-switch button,.auth-back-link{padding:0;border:0;background:none;color:#315e48;font-size:10px;font-weight:700}
+.auth-switch button:hover,.auth-back-link:hover{text-decoration:underline}
+.register-side{overflow-y:auto}
+.register-form-wrap{width:min(100%,430px)}
+.register-form-wrap.register-form-wide{width:min(100%,460px)}
+.account-role-options{display:grid;gap:10px;margin-top:5px}
+.account-role-card{width:100%;min-height:78px;display:flex;align-items:center;gap:13px;padding:13px;border:1px solid #e0e8e1;border-radius:9px;background:#fff;text-align:left;transition:border-color .18s,background .18s,transform .18s}
+.account-role-card:hover,.account-role-card:focus-visible{border-color:#83a28a;background:#f8fbf7;transform:translateY(-1px);outline:none}
+.account-role-icon{width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:9px;background:#eaf2e9;color:#397253;font-size:20px}
+.account-role-icon.staff{background:#f2efe5;color:#8a7445}
+.account-role-copy{min-width:0;flex:1}
+.account-role-copy strong,.account-role-copy small{display:block}
+.account-role-copy strong{color:#30463a;font-size:12px}
+.account-role-copy small{margin-top:5px;color:#88968d;font-size:9px;line-height:1.45}
+.account-role-arrow{color:#668873;font-size:18px}
+.account-security-note{display:flex;align-items:flex-start;gap:8px;margin-top:16px;padding:10px 11px;border:1px solid #e8ede6;border-radius:7px;background:#f5f8f2;color:#77846f}
+.account-security-note>span{font-size:14px}
+.account-security-note p{margin:0;font-size:9px;line-height:1.5}
+.auth-back-link{margin:0 0 8px;cursor:pointer}
+.account-form{display:grid;gap:10px}
+.account-form-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.account-field{min-width:0;display:grid;gap:5px;color:#4c5e53;font-size:9px;font-weight:700}
+.account-field>span{display:flex;justify-content:space-between;gap:8px}
+.account-field i{color:#99a49d;font-size:8px;font-style:normal;font-weight:400}
+.account-field input{width:100%;height:36px;padding:0 9px;border:1px solid #e0e7e0;border-radius:6px;outline:none;background:#fff;color:#314339;font-size:10px;font-weight:400}
+.account-field input:focus{border-color:#75957b;box-shadow:0 0 0 3px #dfebde}
+.account-field input::placeholder{color:#b2bcb4}
+.account-field small{color:#96a198;font-size:8px;font-weight:400;line-height:1.35}
+.account-submit{width:100%;min-height:41px;margin-top:3px}
+.account-submit span{font-size:15px}
+@media(max-width:820px){.register-form-wide{max-width:430px!important}}
+@media(max-width:600px){.register-side{min-height:100vh}.register-form-wrap,.register-form-wrap.register-form-wide{width:min(100%,430px)}.account-form-pair{grid-template-columns:1fr 1fr}}

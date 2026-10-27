@@ -1,10 +1,11 @@
-# Northstar School Library
+# Carbonell School Library
 
 A local school library borrowing system built with React, TypeScript, Vite, Tailwind CSS, Express, and MySQL. The catalog stores title records separately from individually barcoded copies. Circulation history is retained in MySQL.
 
 ## Requirements
 
 - Node.js 20 or newer and npm
+- Python 3.10 or newer with Tkinter/Tcl-Tk for the desktop control panel
 - MySQL 8.0.16+ or MariaDB 10.4+
 - The `school_library` schema imported from [`database/schema/school_library.sql`](database/schema/school_library.sql)
 - A restricted MySQL application account and local settings in `backend/.env`
@@ -21,6 +22,22 @@ npm install
 
 The local `backend/.env` should contain `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME=school_library`. Copy `backend/.env.example` only if `.env` does not exist, then enter the dedicated `library_app` password. Add a random `AUTH_TOKEN_SECRET` of at least 32 characters. Never commit `.env` or use the MySQL root account in the application.
 
+### Librarian invitation code
+
+Librarian self-registration requires a private invitation code. Generate one in PowerShell from the project root:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+```
+
+Copy the generated value into `backend/.env` like this:
+
+```dotenv
+LIBRARIAN_SIGNUP_CODE=paste_the_generated_value_here
+```
+
+Restart the backend after changing `.env`, then share the code only with authorized librarians. Student account creation does not require an invitation code. For a librarian account created directly by the administrator, use `npm run create-librarian` instead.
+
 Create the first administrator. The password prompt is hidden and the password is stored as a scrypt hash:
 
 ```powershell
@@ -35,7 +52,9 @@ npm run create-librarian
 
 ## Run the application
 
-Open two PowerShell windows in the project root. Start the API in the first:
+For one-click local startup, double-click **Start Library Control Panel.bat** in the project root. The Python control panel starts the configured MySQL Windows service, waits for the API health check, starts the frontend, and can open the app automatically. See [`control_panel/README.md`](control_panel/README.md) for service permissions and controls.
+
+To start services manually, open two PowerShell windows in the project root. Start the API in the first:
 
 ```powershell
 npm run dev:backend
@@ -52,7 +71,8 @@ Open the Vite URL printed in the second terminal (normally `http://localhost:517
 ## Current workflows
 
 - HttpOnly signed-cookie sign-in and sign-out, with administrator, librarian, and student roles
-- First administrator and librarian provisioning from local commands; staff can provision and admins can deactivate/reactivate student accounts
+- Public student account creation and invitation-protected librarian registration; administrator accounts remain provisioned only from the local command
+- Staff can provision students and admins can deactivate/reactivate student accounts
 - Catalog title search, normalized author/publisher/category links, and separate physical copy/barcode management
 - Staff dashboard metrics and recent circulation activity
 - Student checkout with active-loan limits and database-backed duplicate-copy protection
@@ -67,6 +87,8 @@ Password reset and broad catalog editing workflows are not yet included. The dat
 ## Project layout
 
 ```text
+control_panel/             Python/Tkinter local service control panel
+Start Library Control Panel.bat
 frontend/src/App.tsx      Authenticated application shell and navigation
 frontend/src/pages/       Overview, catalog, students, circulation, loans, reservations
 frontend/src/components/  Shared form, modal, notification, and status components
