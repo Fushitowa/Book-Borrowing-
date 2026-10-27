@@ -1,0 +1,87 @@
+import { Router } from 'express';
+import { databasePool } from '../config/database.js';
+import { requireRoles } from '../middleware/auth.middleware.js';
+import { writeAudit } from '../services/audit.service.js';
+import { hashPassword } from '../services/password.service.js';
+import type { AuthenticatedRequest } from '../types/auth.js';
+
+export const usersRouter = Router();
+
+usersRouter.get('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+  try {
+    const q = typeof request.query.q === 'string' ? request.query.q.trim().slice(0, 100) : '';
+    const search = `%${q}%`;
+    const [rows] = await databasePool.execute<any[]>(
+      `SELECT u.id, u.username, u.email, u.first_name AS firstName, u.last_name AS lastName,
+          u.account_status AS accountStatus, sp.student_number AS studentNumber,
+          sp.grade_level AS gradeLevel, sp.section
+         FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
+         LEFT JOIN student_profiles sp ON sp.user_id = u.id
+        WHERE r.code = 'STUDENT' AND (? = '' OR u.username LIKE ? OR u.email LIKE ? OR
+          u.first_name LIKE ? OR u.last_name LIKE ? OR sp.student_number LIKE ?)
+        ORDER BY u.last_name, u.first_name LIMIT 500`, [q, search, search, search, search, search]);
+    response.json({ items: rows });
+  } catch (error) { next(error); }
+});
+
+usersRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+  const body = request.body ?? {};
+  const username = typeof body.username === 'string' ? body.username.trim() : '';
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const firstName = typeof body.firstName === 'string' ? body.firstName.trim() : '';
+  const lastName = typeof body.lastName === 'string' ? body.lastName.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const studentNumber = typeof body.studentNumber === 'string' ? body.studentNumber.trim() : '';
+  const gradeLevel = typeof body.gradeLevel === 'string' ? body.gradeLevel.trim() : '';
+  const section = typeof body.section === 'string' ? body.section.trim() : '';
+  if (!/^[a-zA-Z0-9._-]{3,80}$/.test(username) || !firstName || firstName.length > 100 || !lastName || lastName.length > 100) {
+    response.status(400).json({ error: 'Enter a valid username, first name, and last name.' }); return;
+  }
+  if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) { response.status(400).json({ error: 'Enter a valid email address.' }); return; }
+  if (password.length < 12 || password.length > 200) { response.status(400).json({ error: 'Password must be between 12 and 200 characters.' }); return; }
+  if (!studentNumber || studentNumber.length > 40 || gradeLevel.length > 20 || section.length > 50) { response.status(400).json({ error: 'Enter a student number. Grade and section have length limits.' }); return; }
+
+  const connection = await databasePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [roleRows] = await connection.execute<any[]>("SELECT id FROM roles WHERE code = 'STUDENT' LIMIT 1");
+    if (!roleRows.length) throw new Error('The STUDENT role is missing from the database.');
+    const [userInsert] = await connection.execute<any>(
+      'INSERT INTO users (username, email, password_hash, first_name, last_name) VALUES (?, ?, ?, ?, ?)',
+      [username, email || null, await hashPassword(password), firstName, lastName]);
+    const userId = Number(userInsert.insertId);
+    await connection.execute('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)', [userId, roleRows[0].id]);
+    await connection.execute(
+      'INSERT INTO student_profiles (user_id, student_number, grade_level, section) VALUES (?, ?, ?, ?)',
+      [userId, studentNumber, gradeLevel || null, section || null]);
+    await writeAudit(connection, (request as AuthenticatedRequest).auth.id, 'STUDENT_CREATED', 'users', userId, { username, studentNumber });
+    await connection.commit();
+    response.status(201).json({ id: userId, message: 'Student account created.' });
+  } catch (error) { await connection.rollback(); next(error); }
+  finally { connection.release(); }
+});
+
+usersRouter.patch('/:userId/status', requireRoles('ADMIN'), async (request, response, next) => {
+  const userId = Number(request.params.userId);
+  const status = request.body?.status;
+  const actorId = (request as AuthenticatedRequest).auth.id;
+  if (!Number.isSafeInteger(userId) || userId < 1 || !['ACTIVE', 'DISABLED'].includes(status)) {
+    response.status(400).json({ error: 'Choose a valid student and account status.' }); return;
+  }
+  if (userId === actorId) { response.status(409).json({ error: 'You cannot disable your own administrator account.' }); return; }
+  const connection = await databasePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<any[]>(
+      `SELECT u.account_status AS accountStatus FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
+        WHERE u.id = ? AND r.code = 'STUDENT' FOR UPDATE`, [userId]);
+    if (!rows.length) { await connection.rollback(); response.status(404).json({ error: 'Student account not found.' }); return; }
+    const previous = rows[0].accountStatus;
+    await connection.execute('UPDATE users SET account_status = ? WHERE id = ?', [status, userId]);
+    await writeAudit(connection, actorId, status === 'ACTIVE' ? 'STUDENT_REACTIVATED' : 'STUDENT_DISABLED', 'users', userId, { from: previous, to: status });
+    await connection.commit();
+    response.json({ message: status === 'ACTIVE' ? 'Student account reactivated.' : 'Student account disabled.' });
+  } catch (error) { await connection.rollback(); next(error); }
+  finally { connection.release(); }
+});

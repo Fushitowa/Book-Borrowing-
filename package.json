@@ -2,11 +2,13 @@
   "name": "school-library-book-borrowing-system",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["client", "server"],
+  "workspaces": ["frontend", "backend"],
   "scripts": {
-    "dev:client": "npm run dev --workspace client",
-    "dev:server": "npm run dev --workspace server",
-    "build": "npm run build --workspace client && npm run build --workspace server",
-    "typecheck": "npm run typecheck --workspace client && npm run typecheck --workspace server"
+    "dev:frontend": "npm run dev --workspace frontend",
+    "dev:backend": "npm run dev --workspace backend",
+    "create-admin": "npm run create-admin --workspace backend",
+    "create-librarian": "npm run create-librarian --workspace backend",
+    "build": "npm run build --workspace frontend && npm run build --workspace backend",
+    "typecheck": "npm run typecheck --workspace frontend && npm run typecheck --workspace backend"
   }
 }

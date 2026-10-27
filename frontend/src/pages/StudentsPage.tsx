@@ -1,0 +1,28 @@
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { api } from '../services/api';
+import { Field, Modal, StatusPill } from '../components/LibraryUI';
+import type { Notice } from '../types/app';
+import type { Student, User } from '../types';
+export function Students({ user, notify }: { user: User; notify: (notice: Notice) => void }) {
+  const [items, setItems] = useState<Student[]>([]);
+  const [query, setQuery] = useState('');
+  const [modal, setModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const reload = useCallback(() => { api<{ items: Student[] }>(`/users?q=${encodeURIComponent(query)}`).then((result) => setItems(result.items)).catch((e) => notify({ kind: 'error', message: e.message })); }, [query, notify]);
+  useEffect(reload, [reload]);
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true); const data = new FormData(event.currentTarget);
+    try {
+      await api('/users', { method: 'POST', body: JSON.stringify({ username: data.get('username'), email: data.get('email'), firstName: data.get('firstName'), lastName: data.get('lastName'), studentNumber: data.get('studentNumber'), gradeLevel: data.get('gradeLevel'), section: data.get('section'), password: data.get('password') }) });
+      setModal(false); notify({ kind: 'success', message: 'Student account created. Share the sign-in details securely.' }); reload();
+    } catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not create student.' }); }
+    finally { setSaving(false); }
+  };
+  const changeStatus = async (student: Student) => {
+    const status = student.accountStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+    try { await api(`/users/${student.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }); notify({ kind: 'success', message: status === 'ACTIVE' ? 'Student account reactivated.' : 'Student account disabled.' }); reload(); }
+    catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not update student account.' }); }
+  };
+  const isAdmin = user.roles.includes('ADMIN');
+  return <><div className="page-title-row"><div><div className="eyebrow">PEOPLE</div><h1>Students</h1><p>Manage student library accounts and borrowing access.</p></div><button className="primary-button" onClick={() => setModal(true)}><span>＋</span> Add student</button></div><div className="catalog-summary"><div><span className="summary-icon">♙</span><span><strong>{items.length}</strong><small>student accounts</small></span></div><div className="summary-search"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, student number, or email" aria-label="Search students"/><kbd>↵</kbd></div></div><section className="surface catalog-surface"><div className="section-heading"><div><h2>Student directory</h2><p>Accounts are kept for accurate circulation history.</p></div><span className="results-count">{items.length} students</span></div>{items.length ? <div className="table-scroll"><table><thead><tr><th>STUDENT</th><th>STUDENT NUMBER</th><th>GRADE / SECTION</th><th>USERNAME</th><th>STATUS</th>{isAdmin && <th/>}</tr></thead><tbody>{items.map((student) => <tr key={student.id}><td><div className="book-cell"><span className="student-avatar">{student.firstName[0]}{student.lastName[0]}</span><span><strong>{student.firstName} {student.lastName}</strong><small>{student.email || 'No email added'}</small></span></div></td><td className="mono">{student.studentNumber}</td><td>{[student.gradeLevel, student.section].filter(Boolean).join(' · ') || '—'}</td><td>{student.username}</td><td><StatusPill label={student.accountStatus.toLowerCase()} tone={student.accountStatus === 'ACTIVE' ? 'success' : 'neutral'} /></td>{isAdmin && <td><button className="small-outline" onClick={() => changeStatus(student)}>{student.accountStatus === 'ACTIVE' ? 'Disable' : 'Reactivate'}</button></td>}</tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon">♙</span><strong>No students yet</strong><span>Create a student account to get started with circulation.</span></div>}</section>{modal && <Modal title="Register a student" subtitle="This creates a sign-in account and borrowing profile." onClose={() => setModal(false)}><form className="form-grid" onSubmit={create}><div className="form-pair"><Field label="First name" required><input name="firstName" required maxLength={100}/></Field><Field label="Last name" required><input name="lastName" required maxLength={100}/></Field></div><div className="form-pair"><Field label="Username" required><input name="username" required minLength={3} maxLength={80}/></Field><Field label="Student number" required><input name="studentNumber" required maxLength={40}/></Field></div><Field label="Email" hint="Optional"><input name="email" type="email" maxLength={254}/></Field><div className="form-pair"><Field label="Grade"><input name="gradeLevel" maxLength={20} placeholder="Grade 8"/></Field><Field label="Section"><input name="section" maxLength={50} placeholder="Section A"/></Field></div><Field label="Temporary password" hint="At least 12 characters; share it securely" required><input name="password" type="password" required minLength={12} maxLength={200} autoComplete="new-password"/></Field><div className="modal-actions"><button type="button" className="outline-button" onClick={() => setModal(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? 'Creating…' : 'Create student'}</button></div></form></Modal>}</>;
+}

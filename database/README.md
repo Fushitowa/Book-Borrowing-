@@ -6,7 +6,7 @@ This schema is the relational foundation for a single school library. It support
 
 A `books` row is one cataloged title/edition. Every physical item receives its own `book_copies` row and unique barcode. Availability is derived; there is no stored `available` flag or copy count that can drift from circulation data.
 
-Target the database server to **MySQL 8.0.16+ or MariaDB 10.4+**, with InnoDB and `utf8mb4`. XAMPP on this machine includes MariaDB 10.4.32, which supports the generated-column indexes and enforced `CHECK` constraints used here. The minimum MySQL version ensures `CHECK` constraints are enforced. Use UTC for all `DATETIME` values; `DATETIME` itself carries no timezone. The SQL is laid out for phpMyAdmin import and includes only role and default student-loan-policy seed data. It creates no administrator account.
+Target the database server to **MySQL 8.0.16+ or MariaDB 10.4+**, with InnoDB and `utf8mb4`. The minimum MySQL version ensures `CHECK` constraints are enforced. Use UTC for all `DATETIME` values; `DATETIME` itself carries no timezone. The SQL is laid out for phpMyAdmin import and includes only role and default student-loan-policy seed data. It creates no administrator account. The project owner imported this schema into the local MySQL server and confirmed the `school_library` database and all 17 tables through the MySQL CLI.
 
 ## Tables and data dictionary
 
@@ -85,9 +85,11 @@ The reservation-to-loan relationship is enforced from `loans` to `reservations`;
 - Deleting a book cascades its author/category join rows, but is restricted while physical copies or reservations exist. Remove or withdraw copies through status instead of deleting them.
 - Staff attribution FKs use `SET NULL` so deactivated/removed staff do not erase circulation history. Audit actor is likewise nullable; the audit event remains.
 
-## TypeScript/mysql2 connection plan (no backend code yet)
+## TypeScript/mysql2 application connection
 
-Use `mysql2/promise` and a single bounded connection pool configured from environment variables (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`), with TLS enabled when the DB is remote. Set the session timezone to `+00:00` and configure consistent date handling. Keep credentials out of source control and never use the XAMPP root account for a deployed app: create a dedicated database user with only the required DML permissions. Use parameterized placeholders for values, never string-concatenate user input into SQL. Use `pool.getConnection()`, `beginTransaction()`, `commit()`, and `rollback()` around checkout, return, renewal, reservation allocation, and linked notification/audit writes; release the connection in `finally`. Set connection/acquire limits and timeouts, and avoid exposing SQL errors or credentials to clients.
+The backend uses `mysql2/promise` and a bounded pool configured from `backend/.env` (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`). It uses UTC date handling and verifies database connectivity before listening. Credentials and the session signing secret belong only in the ignored `.env` file. The backend uses parameterized query values, transaction scopes for account provisioning, catalog inserts, checkout, and return, and an HttpOnly signed session cookie. The app account should not have schema administration rights. Remote deployments must also enable TLS and use a secrets manager.
+
+The application includes sign-in, role checks, catalog and copy workflows, student provisioning, dashboard metrics, checkout, returns, renewal policy enforcement, FIFO reservation holds and expiry, in-app notifications, and audit entries. Password reset and broader catalog editing remain follow-up work.
 
 ## Security and backup guidance
 
@@ -106,4 +108,4 @@ Use `mysql2/promise` and a single bounded connection pool configured from enviro
 - Reservations cannot allocate a copy belonging to another title; reservation-linked loans cannot name a different student.
 - Status enums and row-level CHECK constraints cover defined state combinations; cross-row state transitions are assigned to backend transactions.
 - No plaintext password, default admin account, stored availability count, or stored overdue flag is included.
-- The script was reviewed for dependency order and MySQL/MariaDB syntax against the stated minimum versions. XAMPP's MariaDB service is not starting yet, so this script has not been executed against a live server; after resolving the port conflict, import it first into a disposable XAMPP database and inspect `SHOW CREATE TABLE`/foreign-key metadata before production use.
+- The script was reviewed for dependency order and MySQL/MariaDB syntax against the stated minimum versions, and the project owner confirmed the import and expected table list. Before production use, validate the target server version and inspect `SHOW CREATE TABLE` and foreign-key metadata on that server.

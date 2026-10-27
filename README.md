@@ -1,0 +1,88 @@
+# Northstar School Library
+
+A local school library borrowing system built with React, TypeScript, Vite, Tailwind CSS, Express, and MySQL. The catalog stores title records separately from individually barcoded copies. Circulation history is retained in MySQL.
+
+## Requirements
+
+- Node.js 20 or newer and npm
+- MySQL 8.0.16+ or MariaDB 10.4+
+- The `school_library` schema imported from [`database/schema/school_library.sql`](database/schema/school_library.sql)
+- A restricted MySQL application account and local settings in `backend/.env`
+
+Do not run the XAMPP MySQL service alongside the standalone MySQL server on the same port. Start the database service you imported `school_library` into.
+
+## First-time setup
+
+From the repository root in PowerShell:
+
+```powershell
+npm install
+```
+
+The local `backend/.env` should contain `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME=school_library`. Copy `backend/.env.example` only if `.env` does not exist, then enter the dedicated `library_app` password. Add a random `AUTH_TOKEN_SECRET` of at least 32 characters. Never commit `.env` or use the MySQL root account in the application.
+
+Create the first administrator. The password prompt is hidden and the password is stored as a scrypt hash:
+
+```powershell
+npm run create-admin
+```
+
+Additional librarian accounts can be created from the terminal with the same secure prompt:
+
+```powershell
+npm run create-librarian
+```
+
+## Run the application
+
+Open two PowerShell windows in the project root. Start the API in the first:
+
+```powershell
+npm run dev:backend
+```
+
+Start Vite in the second:
+
+```powershell
+npm run dev:frontend
+```
+
+Open the Vite URL printed in the second terminal (normally `http://localhost:5173`). The API is available at `http://localhost:3000`; `/api/health` reports whether its database check passed. Vite proxies `/api` requests to Express.
+
+## Current workflows
+
+- HttpOnly signed-cookie sign-in and sign-out, with administrator, librarian, and student roles
+- First administrator and librarian provisioning from local commands; staff can provision and admins can deactivate/reactivate student accounts
+- Catalog title search, normalized author/publisher/category links, and separate physical copy/barcode management
+- Staff dashboard metrics and recent circulation activity
+- Student checkout with active-loan limits and database-backed duplicate-copy protection
+- Return processing with good or damaged condition, loss handling, and staff copy repair/withdrawal controls
+- Student reservations, FIFO ready-copy allocation, two-day hold expiration, and in-app notifications
+- Policy-based renewals with limits and reservation queue checks
+- Students can view their own loans; staff can view and return circulation records
+- Audit entries for account creation, catalog additions, checkouts, and returns
+
+Password reset and broad catalog editing workflows are not yet included. The database schema remains the source of truth for student loan policy.
+
+## Project layout
+
+```text
+frontend/src/App.tsx      Authenticated application shell and navigation
+frontend/src/pages/       Overview, catalog, students, circulation, loans, reservations
+frontend/src/components/  Shared form, modal, notification, and status components
+frontend/src/services/    Typed fetch client with cookie credentials
+backend/src/routes/       Auth, users, books, loans, reservations, notifications, dashboard
+backend/src/services/     Password hashing, signed sessions, audit, notification, reservations
+backend/src/config/       MySQL connection pool and startup check
+database/schema/          Importable MySQL schema
+database/                 Schema notes, migrations, and seeds
+```
+
+## Build checks
+
+```powershell
+npm run typecheck
+npm run build
+```
+
+See [`database/README.md`](database/README.md) for the schema, constraints, relationship diagram, and circulation design notes.
