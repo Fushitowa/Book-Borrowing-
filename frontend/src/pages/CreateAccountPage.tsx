@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { AuthArtwork } from '../components/AuthArtwork';
+import { BrandMark } from '../components/BrandMark';
 import { api } from '../services/api';
 import type { User } from '../types';
 
@@ -39,7 +40,8 @@ export function CreateAccountPage({ onRegister, onBackToLogin }: CreateAccountPa
           email: form.get('email'),
           password,
           studentNumber: form.get('studentNumber'),
-          gradeLevel: form.get('gradeLevel'),
+          program: form.get('program'),
+          yearLevel: form.get('yearLevel'),
           section: form.get('section'),
           invitationCode: form.get('invitationCode'),
         }),
@@ -56,9 +58,9 @@ export function CreateAccountPage({ onRegister, onBackToLogin }: CreateAccountPa
     <div className="login-layout">
       <AuthArtwork />
       <div className="login-side register-side">
-        <div className="login-side-top"><span className="brand-mark">C</span><span>Carbonell <b>Library</b></span></div>
+        <div className="login-side-top"><BrandMark /><span>Carbonell <b>Library</b></span></div>
         <div className={`login-form-wrap register-form-wrap${role ? ' register-form-wide' : ''}`}>
-          <div className="eyebrow">JOIN YOUR SCHOOL LIBRARY</div>
+          <div className="eyebrow">JOIN YOUR COLLEGE LIBRARY</div>
           {!role ? (
             <>
               <h1>Create your account</h1>
@@ -81,7 +83,7 @@ export function CreateAccountPage({ onRegister, onBackToLogin }: CreateAccountPa
             <>
               <button type="button" className="auth-back-link" onClick={() => { setRole(null); setError(''); }}>← Change account type</button>
               <h1>Create {role === 'STUDENT' ? 'student' : 'librarian'} account</h1>
-              <p className="login-subtitle">Enter your details to set up your library account.</p>
+              <p className="login-subtitle">Enter your details to join the campus library.</p>
               <form onSubmit={submit} className="account-form">
                 <div className="account-form-pair">
                   <label className="account-field"><span>First name</span><input name="firstName" autoComplete="given-name" maxLength={100} required /></label>
@@ -92,9 +94,10 @@ export function CreateAccountPage({ onRegister, onBackToLogin }: CreateAccountPa
                 {role === 'STUDENT' ? (
                   <>
                     <label className="account-field"><span>Student number</span><input name="studentNumber" maxLength={40} required /></label>
+                    <label className="account-field"><span>Program / course <i>Optional</i></span><input name="program" maxLength={120} placeholder="e.g. BS Information Technology" /></label>
                     <div className="account-form-pair">
-                      <label className="account-field"><span>Grade <i>Optional</i></span><input name="gradeLevel" maxLength={20} placeholder="e.g. Grade 8" /></label>
-                      <label className="account-field"><span>Section <i>Optional</i></span><input name="section" maxLength={50} placeholder="e.g. Section A" /></label>
+                      <label className="account-field"><span>Year level <i>Optional</i></span><input name="yearLevel" maxLength={20} placeholder="e.g. 1st Year" /></label>
+                      <label className="account-field"><span>Section <i>Optional</i></span><input name="section" maxLength={50} placeholder="e.g. BSIT-1A" /></label>
                     </div>
                   </>
                 ) : (
@@ -111,7 +114,7 @@ export function CreateAccountPage({ onRegister, onBackToLogin }: CreateAccountPa
           )}
           <div className="auth-switch">Already have an account? <button type="button" onClick={onBackToLogin}>Sign in</button></div>
         </div>
-        <div className="login-bottom"><span>© {new Date().getFullYear()} School Library</span><span>Library services</span></div>
+        <div className="login-bottom"><span>© {new Date().getFullYear()} Carbonell College Library</span><span>Library services</span></div>
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
 # Carbonell School Library
 
+![Carbonell Library emblem](frontend/public/carbonell-library-mark.png)
+
+The original full logo artwork is available at [`frontend/public/carbonell-library-logo.jpg`](frontend/public/carbonell-library-logo.jpg).
+
 A local school library borrowing system built with React, TypeScript, Vite, Tailwind CSS, Express, and MySQL. The catalog stores title records separately from individually barcoded copies. Circulation history is retained in MySQL.
 
 ## Requirements
@@ -77,6 +81,9 @@ Open the Vite URL printed in the second terminal (normally `http://localhost:517
 - Staff dashboard metrics and recent circulation activity
 - Student checkout with active-loan limits and database-backed duplicate-copy protection
 - Return processing with good or damaged condition, loss handling, and staff copy repair/withdrawal controls
+- Student book browsing by title, author, category, or ISBN with available/borrowed/reserved copy counts
+- Student dashboard, active loans, borrowing history, reservation tracking, decision updates, notifications, and editable contact email
+- Student borrowing requests with librarian approval separated from the later physical-copy issue; eligibility is checked again at issue
 - Student reservations, FIFO ready-copy allocation, two-day hold expiration, and in-app notifications
 - Policy-based renewals with limits and reservation queue checks
 - Students can view their own loans; staff can view and return circulation records
@@ -108,3 +115,14 @@ npm run build
 ```
 
 See [`database/README.md`](database/README.md) for the schema, constraints, relationship diagram, and circulation design notes.
+
+## Role workspaces
+
+Administrators and librarians have separate menus and permissions. Librarians can review student records and eligibility, search the catalog, issue copies, process returns, review and decide student borrowing requests, manage reservations, inspect inventory, monitor overdue loans, and export a circulation summary. Students can browse availability, request a title with an available copy, or join the reservation queue when copies are unavailable. Librarians decide requests separately from handing over and recording a specific physical copy.
+
+Your current database already has the college profile and borrowing request table. Apply these two new migrations once before starting the updated backend:
+
+```powershell
+Get-Content -Raw -LiteralPath "database/migrations/20261029_separate_request_approval_from_issue.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
+Get-Content -Raw -LiteralPath "database/migrations/20261030_student_due_reminder_deduplication.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
+```

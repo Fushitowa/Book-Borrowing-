@@ -20,6 +20,9 @@ export interface Book {
   categories: string | null;
   totalCopies: number;
   availableCopies: number;
+  borrowedCopies: number;
+  reservedCopies: number;
+  waitingReservations: number;
 }
 
 export interface Loan {
@@ -32,6 +35,7 @@ export interface Loan {
   title: string;
   barcode: string;
   borrower: string;
+  borrowerEmail?: string | null;
   borrowerId: number;
   isOverdue: boolean | number;
 }
@@ -44,8 +48,11 @@ export interface Student {
   lastName: string;
   accountStatus: 'ACTIVE' | 'DISABLED' | 'LOCKED';
   studentNumber: string;
-  gradeLevel: string | null;
+  program: string | null;
+  yearLevel: string | null;
   section: string | null;
+  activeLoans: number;
+  maxActiveLoans: number | null;
 }
 
 export interface Reservation {
@@ -72,6 +79,6 @@ export interface NotificationItem {
 }
 
 export interface DashboardData {
-  stats: { titles: number; availableCopies: number; activeLoans: number; overdueLoans: number; students: number };
+  stats: { titles: number; totalCopies: number; availableCopies: number; activeLoans: number; overdueLoans: number; students: number; pendingRequests: number; issuedToday: number; returnedToday: number };
   recentLoans: Loan[];
 }

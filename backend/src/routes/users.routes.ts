@@ -7,6 +7,37 @@ import type { AuthenticatedRequest } from '../types/auth.js';
 
 export const usersRouter = Router();
 
+usersRouter.get('/me', requireRoles('STUDENT'), async (request, response, next) => {
+  const userId = (request as AuthenticatedRequest).auth.id;
+  try {
+    const [rows] = await databasePool.execute<any[]>(
+      `SELECT u.id, u.username, u.email, u.first_name AS firstName, u.last_name AS lastName,
+          sp.student_number AS studentNumber, sp.program, sp.year_level AS yearLevel, sp.section
+         FROM users u LEFT JOIN student_profiles sp ON sp.user_id = u.id WHERE u.id = ?`, [userId]);
+    if (!rows.length) { response.status(404).json({ error: 'Student profile not found.' }); return; }
+    response.json({ profile: rows[0] });
+  } catch (error) { next(error); }
+});
+
+usersRouter.patch('/me', requireRoles('STUDENT'), async (request, response, next) => {
+  const userId = (request as AuthenticatedRequest).auth.id;
+  const rawEmail = request.body?.email;
+  if (rawEmail !== null && typeof rawEmail !== 'string') { response.status(400).json({ error: 'Enter a valid email address.' }); return; }
+  const email = typeof rawEmail === 'string' ? rawEmail.trim() : '';
+  if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) { response.status(400).json({ error: 'Enter a valid email address (254 characters or fewer).' }); return; }
+  const connection = await databasePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [beforeRows] = await connection.execute<any[]>("SELECT email FROM users WHERE id = ? AND account_status = 'ACTIVE' FOR UPDATE", [userId]);
+    if (!beforeRows.length) { await connection.rollback(); response.status(404).json({ error: 'Active student account not found.' }); return; }
+    await connection.execute('UPDATE users SET email = ? WHERE id = ?', [email || null, userId]);
+    await writeAudit(connection, userId, 'STUDENT_PROFILE_EMAIL_UPDATED', 'users', userId, { from: beforeRows[0].email, to: email || null });
+    await connection.commit();
+    response.json({ message: 'Profile email updated.', email: email || null });
+  } catch (error) { await connection.rollback(); next(error); }
+  finally { connection.release(); }
+});
+
 usersRouter.get('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
   try {
     const q = typeof request.query.q === 'string' ? request.query.q.trim().slice(0, 100) : '';
@@ -14,17 +45,21 @@ usersRouter.get('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respons
     const [rows] = await databasePool.execute<any[]>(
       `SELECT u.id, u.username, u.email, u.first_name AS firstName, u.last_name AS lastName,
           u.account_status AS accountStatus, sp.student_number AS studentNumber,
-          sp.grade_level AS gradeLevel, sp.section
+          sp.program, sp.year_level AS yearLevel, sp.section,
+          (SELECT COUNT(*) FROM loans l WHERE l.borrower_user_id = u.id AND l.status = 'ACTIVE') AS activeLoans,
+          (SELECT lp.max_active_loans FROM loan_policies lp JOIN roles sr ON sr.id = lp.borrower_role_id
+            JOIN user_roles sur ON sur.role_id = sr.id AND sur.user_id = u.id
+           WHERE sr.code = 'STUDENT' AND lp.is_active = 1 LIMIT 1) AS maxActiveLoans
          FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
          LEFT JOIN student_profiles sp ON sp.user_id = u.id
         WHERE r.code = 'STUDENT' AND (? = '' OR u.username LIKE ? OR u.email LIKE ? OR
-          u.first_name LIKE ? OR u.last_name LIKE ? OR sp.student_number LIKE ?)
-        ORDER BY u.last_name, u.first_name LIMIT 500`, [q, search, search, search, search, search]);
+          u.first_name LIKE ? OR u.last_name LIKE ? OR sp.student_number LIKE ? OR sp.program LIKE ?)
+        ORDER BY u.last_name, u.first_name LIMIT 500`, [q, search, search, search, search, search, search]);
     response.json({ items: rows });
   } catch (error) { next(error); }
 });
 
-usersRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+usersRouter.post('/', requireRoles('ADMIN'), async (request, response, next) => {
   const body = request.body ?? {};
   const username = typeof body.username === 'string' ? body.username.trim() : '';
   const email = typeof body.email === 'string' ? body.email.trim() : '';
@@ -32,14 +67,15 @@ usersRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respon
   const lastName = typeof body.lastName === 'string' ? body.lastName.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
   const studentNumber = typeof body.studentNumber === 'string' ? body.studentNumber.trim() : '';
-  const gradeLevel = typeof body.gradeLevel === 'string' ? body.gradeLevel.trim() : '';
+  const program = typeof body.program === 'string' ? body.program.trim() : '';
+  const yearLevel = typeof body.yearLevel === 'string' ? body.yearLevel.trim() : '';
   const section = typeof body.section === 'string' ? body.section.trim() : '';
   if (!/^[a-zA-Z0-9._-]{3,80}$/.test(username) || !firstName || firstName.length > 100 || !lastName || lastName.length > 100) {
     response.status(400).json({ error: 'Enter a valid username, first name, and last name.' }); return;
   }
   if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) { response.status(400).json({ error: 'Enter a valid email address.' }); return; }
   if (password.length < 12 || password.length > 200) { response.status(400).json({ error: 'Password must be between 12 and 200 characters.' }); return; }
-  if (!studentNumber || studentNumber.length > 40 || gradeLevel.length > 20 || section.length > 50) { response.status(400).json({ error: 'Enter a student number. Grade and section have length limits.' }); return; }
+  if (!studentNumber || studentNumber.length > 40 || program.length > 120 || yearLevel.length > 20 || section.length > 50) { response.status(400).json({ error: 'Enter a student number. Program, year level, and section have length limits.' }); return; }
 
   const connection = await databasePool.getConnection();
   try {
@@ -52,8 +88,8 @@ usersRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respon
     const userId = Number(userInsert.insertId);
     await connection.execute('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)', [userId, roleRows[0].id]);
     await connection.execute(
-      'INSERT INTO student_profiles (user_id, student_number, grade_level, section) VALUES (?, ?, ?, ?)',
-      [userId, studentNumber, gradeLevel || null, section || null]);
+      'INSERT INTO student_profiles (user_id, student_number, program, year_level, section) VALUES (?, ?, ?, ?, ?)',
+      [userId, studentNumber, program || null, yearLevel || null, section || null]);
     await writeAudit(connection, (request as AuthenticatedRequest).auth.id, 'STUDENT_CREATED', 'users', userId, { username, studentNumber });
     await connection.commit();
     response.status(201).json({ id: userId, message: 'Student account created.' });

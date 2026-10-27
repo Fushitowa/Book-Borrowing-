@@ -4,6 +4,7 @@ import type { RoleCode, SessionUser } from '../types/auth.js';
 
 const COOKIE_NAME = 'library_session';
 const SESSION_SECONDS = 60 * 60 * 8;
+const REMEMBERED_SESSION_SECONDS = 60 * 60 * 24 * 30;
 
 function secret(): string {
   const value = process.env.AUTH_TOKEN_SECRET;
@@ -15,7 +16,7 @@ function signature(input: string): string {
   return createHmac('sha256', secret()).update(input).digest('base64url');
 }
 
-export function createSessionToken(user: SessionUser): string {
+export function createSessionToken(user: SessionUser, rememberMe = false): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify({
     sub: user.id,
@@ -23,7 +24,7 @@ export function createSessionToken(user: SessionUser): string {
     firstName: user.firstName,
     lastName: user.lastName,
     roles: user.roles,
-    exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS,
+    exp: Math.floor(Date.now() / 1000) + (rememberMe ? REMEMBERED_SESSION_SECONDS : SESSION_SECONDS),
   })).toString('base64url');
   const content = `${header}.${payload}`;
   return `${content}.${signature(content)}`;
@@ -47,9 +48,10 @@ export function readSessionToken(token: string): SessionUser | null {
   }
 }
 
-export function setSessionCookie(response: Response, token: string): void {
+export function setSessionCookie(response: Response, token: string, rememberMe = false): void {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  response.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}${secure}`);
+  const maxAge = rememberMe ? REMEMBERED_SESSION_SECONDS : SESSION_SECONDS;
+  response.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`);
 }
 
 export function clearSessionCookie(response: Response): void {

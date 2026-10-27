@@ -24,7 +24,7 @@ loansRouter.get('/', requireAuth, async (request, response, next) => {
     const [rows] = await databasePool.execute<any[]>(
       `SELECT l.id, l.status, l.checked_out_at AS checkedOutAt, l.due_at AS dueAt,
           l.returned_at AS returnedAt, l.return_condition AS returnCondition,
-          b.title, bc.barcode, CONCAT(u.first_name, ' ', u.last_name) AS borrower,
+          b.title, bc.barcode, CONCAT(u.first_name, ' ', u.last_name) AS borrower, u.email AS borrowerEmail,
           u.id AS borrowerId, CASE WHEN l.status = 'ACTIVE' AND l.due_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END AS isOverdue
         FROM loans l JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
         JOIN users u ON u.id = l.borrower_user_id
@@ -217,7 +217,11 @@ loansRouter.get('/borrowers', requireRoles('ADMIN', 'LIBRARIAN'), async (_reques
   try {
     const [rows] = await databasePool.query<any[]>(
       `SELECT u.id, u.username, CONCAT(u.first_name, ' ', u.last_name) AS name,
-          sp.student_number AS studentNumber
+          sp.student_number AS studentNumber,
+          (SELECT COUNT(*) FROM loans l WHERE l.borrower_user_id = u.id AND l.status = 'ACTIVE') AS activeLoans,
+          (SELECT lp.max_active_loans FROM loan_policies lp JOIN roles sr ON sr.id = lp.borrower_role_id
+            JOIN user_roles sur ON sur.role_id = sr.id AND sur.user_id = u.id
+           WHERE sr.code = 'STUDENT' AND lp.is_active = 1 LIMIT 1) AS maxActiveLoans
        FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
        LEFT JOIN student_profiles sp ON sp.user_id = u.id
        WHERE r.code = 'STUDENT' AND u.account_status = 'ACTIVE'

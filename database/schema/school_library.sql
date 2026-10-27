@@ -1,4 +1,4 @@
--- School Library Book Borrowing System
+-- College Library Book Borrowing System
 -- Target: MySQL 8.0.16+ or MariaDB 10.4+ with InnoDB and utf8mb4.
 -- Import this file once in phpMyAdmin. It creates the database if it does not exist.
 -- Passwords are stored only as password hashes produced by the backend.
@@ -50,13 +50,14 @@ CREATE TABLE IF NOT EXISTS user_roles (
 CREATE TABLE IF NOT EXISTS student_profiles (
   user_id BIGINT UNSIGNED NOT NULL,
   student_number VARCHAR(40) NOT NULL,
-  grade_level VARCHAR(20) NULL,
+  program VARCHAR(120) NULL,
+  year_level VARCHAR(20) NULL,
   section VARCHAR(50) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id),
   UNIQUE KEY uq_student_profiles_number (student_number),
-  KEY ix_student_profiles_class (grade_level, section),
+  KEY ix_student_profiles_program_year_section (program, year_level, section),
   CONSTRAINT fk_student_profiles_user FOREIGN KEY (user_id) REFERENCES users (id)
     ON DELETE CASCADE ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -260,6 +261,47 @@ CREATE TABLE IF NOT EXISTS loans (
     ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Students may request a checkout; a librarian approves by issuing an available
+-- copy in the same transaction, or rejects with a recorded reason.
+CREATE TABLE IF NOT EXISTS borrowing_requests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  student_user_id BIGINT UNSIGNED NOT NULL,
+  book_id BIGINT UNSIGNED NOT NULL,
+  status ENUM('PENDING','APPROVED','REJECTED','ISSUED') NOT NULL DEFAULT 'PENDING',
+  student_note VARCHAR(500) NULL,
+  response_reason VARCHAR(500) NULL,
+  handled_by_user_id BIGINT UNSIGNED NULL,
+  issued_by_user_id BIGINT UNSIGNED NULL,
+  loan_id BIGINT UNSIGNED NULL,
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at DATETIME NULL,
+  issued_at DATETIME NULL,
+  pending_student_id BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status = 'PENDING' THEN student_user_id ELSE NULL END) STORED,
+  pending_book_id BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status = 'PENDING' THEN book_id ELSE NULL END) STORED,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_borrowing_requests_pending_student_book (pending_student_id, pending_book_id),
+  UNIQUE KEY uq_borrowing_requests_loan (loan_id),
+  KEY ix_borrowing_requests_status_requested (status, requested_at, id),
+  KEY ix_borrowing_requests_student (student_user_id, requested_at),
+  KEY ix_borrowing_requests_issuer (issued_by_user_id),
+  CONSTRAINT ck_borrowing_requests_resolution CHECK (
+    (status = 'PENDING' AND resolved_at IS NULL AND handled_by_user_id IS NULL AND issued_by_user_id IS NULL AND loan_id IS NULL AND issued_at IS NULL AND response_reason IS NULL)
+    OR (status = 'APPROVED' AND resolved_at IS NOT NULL AND handled_by_user_id IS NOT NULL AND issued_by_user_id IS NULL AND loan_id IS NULL AND issued_at IS NULL AND response_reason IS NULL)
+    OR (status = 'REJECTED' AND resolved_at IS NOT NULL AND handled_by_user_id IS NOT NULL AND issued_by_user_id IS NULL AND loan_id IS NULL AND issued_at IS NULL AND response_reason IS NOT NULL)
+    OR (status = 'ISSUED' AND resolved_at IS NOT NULL AND handled_by_user_id IS NOT NULL AND issued_by_user_id IS NOT NULL AND loan_id IS NOT NULL AND issued_at IS NOT NULL AND response_reason IS NULL)
+  ),
+  CONSTRAINT fk_borrowing_requests_student FOREIGN KEY (student_user_id) REFERENCES users (id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_borrowing_requests_book FOREIGN KEY (book_id) REFERENCES books (id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_borrowing_requests_handler FOREIGN KEY (handled_by_user_id) REFERENCES users (id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_borrowing_requests_issuer FOREIGN KEY (issued_by_user_id) REFERENCES users (id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_borrowing_requests_loan FOREIGN KEY (loan_id) REFERENCES loans (id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS renewals (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   loan_id BIGINT UNSIGNED NOT NULL,
@@ -287,7 +329,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   body TEXT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   read_at DATETIME NULL,
+  dedupe_key VARCHAR(100) NULL,
   PRIMARY KEY (id),
+  UNIQUE KEY uq_notifications_user_dedupe (user_id, dedupe_key),
   KEY ix_notifications_user_created (user_id, created_at),
   KEY ix_notifications_user_read (user_id, read_at),
   CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users (id)

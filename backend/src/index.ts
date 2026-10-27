@@ -8,7 +8,10 @@ import { loansRouter } from './routes/loans.routes.js';
 import { usersRouter } from './routes/users.routes.js';
 import { reservationsRouter } from './routes/reservations.routes.js';
 import { notificationsRouter } from './routes/notifications.routes.js';
+import { adminRouter } from './routes/admin.routes.js';
+import { borrowingRequestsRouter } from './routes/borrowingRequests.routes.js';
 import { expireReadyReservations } from './services/reservation.service.js';
+import { createDueSoonReminders } from './services/dueReminder.service.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -30,6 +33,8 @@ app.use('/api/loans', loansRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/reservations', reservationsRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/borrowing-requests', borrowingRequestsRouter);
 
 app.get('/api/health', async (_request, response) => {
   try {
@@ -60,7 +65,14 @@ async function startServer(): Promise<void> {
       });
     }, 60_000);
     reservationSweep.unref();
+    const dueReminderSweep = setInterval(() => {
+      void createDueSoonReminders().catch((error: unknown) => {
+        console.error('Due-date reminder job failed:', error instanceof Error ? error.message : 'Unknown error');
+      });
+    }, 60 * 60_000);
+    dueReminderSweep.unref();
     void expireReadyReservations().catch(() => undefined);
+    void createDueSoonReminders().catch(() => undefined);
     app.listen(port, () => {
       console.log(`API server listening on http://localhost:${port}`);
     });

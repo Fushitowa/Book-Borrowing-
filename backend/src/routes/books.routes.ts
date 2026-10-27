@@ -9,11 +9,12 @@ export const booksRouter = Router();
 booksRouter.get('/available-copies', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
   try {
     const [rows] = await databasePool.query<any[]>(
-      `SELECT bc.id, bc.barcode, bc.shelf_location AS shelfLocation, b.title
+      `SELECT bc.id, bc.book_id AS bookId, bc.barcode, bc.shelf_location AS shelfLocation, b.title
          FROM book_copies bc JOIN books b ON b.id = bc.book_id
         WHERE bc.copy_status = 'IN_SERVICE'
           AND NOT EXISTS (SELECT 1 FROM loans l WHERE l.copy_id = bc.id AND l.status = 'ACTIVE')
           AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.allocated_copy_id = bc.id AND r.status = 'READY')
+          AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.book_id = bc.book_id AND r.status = 'PENDING')
         ORDER BY b.title, bc.barcode LIMIT 500`);
     response.json({ items: rows });
   } catch (error) { next(error); }
@@ -35,19 +36,25 @@ booksRouter.get('/', requireAuth, async (request, response, next) => {
           COUNT(DISTINCT bc.id) AS totalCopies,
           SUM(CASE WHEN bc.copy_status = 'IN_SERVICE' AND NOT EXISTS
             (SELECT 1 FROM loans l WHERE l.copy_id = bc.id AND l.status = 'ACTIVE') AND NOT EXISTS
-            (SELECT 1 FROM reservations r WHERE r.allocated_copy_id = bc.id AND r.status = 'READY')
+            (SELECT 1 FROM reservations r WHERE r.allocated_copy_id = bc.id AND r.status = 'READY') AND NOT EXISTS
+            (SELECT 1 FROM reservations r WHERE r.book_id = bc.book_id AND r.status = 'PENDING')
             THEN 1 ELSE 0 END) AS availableCopies
+          ,COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM loans l WHERE l.copy_id = bc.id AND l.status = 'ACTIVE') THEN bc.id END) AS borrowedCopies
+          ,COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM reservations r WHERE r.allocated_copy_id = bc.id AND r.status = 'READY') THEN bc.id END) AS reservedCopies
+          ,(SELECT COUNT(*) FROM reservations rq WHERE rq.book_id = b.id AND rq.status = 'PENDING') AS waitingReservations
         FROM books b LEFT JOIN publishers p ON p.id = b.publisher_id
         LEFT JOIN book_copies bc ON bc.book_id = b.id
         WHERE (? = '' OR b.title LIKE ? OR b.isbn LIKE ? OR EXISTS
-          (SELECT 1 FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id AND a.display_name LIKE ?))
+          (SELECT 1 FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id AND a.display_name LIKE ?) OR EXISTS
+          (SELECT 1 FROM book_categories bcg JOIN categories c ON c.id = bcg.category_id WHERE bcg.book_id = b.id AND c.name LIKE ?))
         GROUP BY b.id, p.name ORDER BY b.title ASC LIMIT ? OFFSET ?`,
-      [query, search, search, search, pageSize, (page - 1) * pageSize],
+      [query, search, search, search, search, pageSize, (page - 1) * pageSize],
     );
     const [countRows] = await databasePool.execute<any[]>(
       `SELECT COUNT(*) AS total FROM books b WHERE (? = '' OR b.title LIKE ? OR b.isbn LIKE ? OR EXISTS
-        (SELECT 1 FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id AND a.display_name LIKE ?))`,
-      [query, search, search, search],
+        (SELECT 1 FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id AND a.display_name LIKE ?) OR EXISTS
+        (SELECT 1 FROM book_categories bcg JOIN categories c ON c.id = bcg.category_id WHERE bcg.book_id = b.id AND c.name LIKE ?))`,
+      [query, search, search, search, search],
     );
     response.json({ items: rows, page, pageSize, total: countRows[0].total });
   } catch (error) { next(error); }
@@ -140,6 +147,26 @@ booksRouter.post('/:bookId/copies', requireRoles('ADMIN', 'LIBRARIAN'), async (r
   finally { connection.release(); }
 });
 
+booksRouter.get('/copies', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+  const q = typeof request.query.q === 'string' ? request.query.q.trim().slice(0, 100) : '';
+  const status = typeof request.query.status === 'string' ? request.query.status.toUpperCase() : 'ALL';
+  if (!['ALL', 'IN_SERVICE', 'DAMAGED', 'LOST', 'WITHDRAWN'].includes(status)) { response.status(400).json({ error: 'Choose a valid copy status.' }); return; }
+  const search = `%${q}%`;
+  try {
+    const [items] = await databasePool.execute<any[]>(
+      `SELECT bc.id, bc.book_id AS bookId, bc.barcode, bc.copy_status AS status,
+          bc.shelf_location AS shelfLocation, b.title,
+          CONCAT(borrower.first_name, ' ', borrower.last_name) AS borrower,
+          (SELECT l.id FROM loans l WHERE l.copy_id = bc.id AND l.status = 'ACTIVE' LIMIT 1) AS activeLoanId
+         FROM book_copies bc JOIN books b ON b.id = bc.book_id
+         LEFT JOIN loans active_loan ON active_loan.copy_id = bc.id AND active_loan.status = 'ACTIVE'
+         LEFT JOIN users borrower ON borrower.id = active_loan.borrower_user_id
+        WHERE (? = 'ALL' OR bc.copy_status = ?) AND (? = '' OR bc.barcode LIKE ? OR b.title LIKE ? OR bc.shelf_location LIKE ?)
+        ORDER BY b.title, bc.barcode LIMIT 500`, [status, status, q, search, search, search]);
+    response.json({ items });
+  } catch (error) { next(error); }
+});
+
 booksRouter.patch('/copies/:copyId/status', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
   const copyId = Number(request.params.copyId);
   const status = request.body?.status;
@@ -157,6 +184,9 @@ booksRouter.patch('/copies/:copyId/status', requireRoles('ADMIN', 'LIBRARIAN'), 
          FROM book_copies bc WHERE bc.id = ? FOR UPDATE`, [copyId]);
     if (!rows.length) { await connection.rollback(); response.status(404).json({ error: 'Copy not found.' }); return; }
     if (rows[0].hasActiveLoan || rows[0].hasHold) { await connection.rollback(); response.status(409).json({ error: 'An active loan or ready reservation is linked to this copy.' }); return; }
+    if (status === 'WITHDRAWN' && !['IN_SERVICE', 'DAMAGED'].includes(rows[0].copyStatus)) {
+      await connection.rollback(); response.status(409).json({ error: 'Only an in-service or damaged copy can be withdrawn. Lost items require a recovery record.' }); return;
+    }
     if (status === 'IN_SERVICE' && !['DAMAGED', 'WITHDRAWN'].includes(rows[0].copyStatus)) {
       await connection.rollback(); response.status(409).json({ error: 'Only a damaged or withdrawn copy can be returned to service here. Lost items require a recovery record.' }); return;
     }

@@ -34,7 +34,8 @@ export async function register(request: Request, response: Response): Promise<vo
   const lastName = typeof body.lastName === 'string' ? body.lastName.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
   const studentNumber = typeof body.studentNumber === 'string' ? body.studentNumber.trim() : '';
-  const gradeLevel = typeof body.gradeLevel === 'string' ? body.gradeLevel.trim() : '';
+  const program = typeof body.program === 'string' ? body.program.trim() : '';
+  const yearLevel = typeof body.yearLevel === 'string' ? body.yearLevel.trim() : '';
   const section = typeof body.section === 'string' ? body.section.trim() : '';
   const librarianCode = typeof body.invitationCode === 'string' ? body.invitationCode : '';
 
@@ -54,8 +55,8 @@ export async function register(request: Request, response: Response): Promise<vo
     response.status(400).json({ error: 'Password must be between 12 and 200 characters.' });
     return;
   }
-  if (role === 'STUDENT' && (!studentNumber || studentNumber.length > 40 || gradeLevel.length > 20 || section.length > 50)) {
-    response.status(400).json({ error: 'Enter a student number. Grade and section have length limits.' });
+  if (role === 'STUDENT' && (!studentNumber || studentNumber.length > 40 || program.length > 120 || yearLevel.length > 20 || section.length > 50)) {
+    response.status(400).json({ error: 'Enter a student number. Program, year level, and section have length limits.' });
     return;
   }
   registrations.set(ip, attempt && attempt.resetAt > now
@@ -79,8 +80,8 @@ export async function register(request: Request, response: Response): Promise<vo
     await connection.execute('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)', [userId, roleRows[0].id]);
     if (role === 'STUDENT') {
       await connection.execute(
-        'INSERT INTO student_profiles (user_id, student_number, grade_level, section) VALUES (?, ?, ?, ?)',
-        [userId, studentNumber, gradeLevel || null, section || null],
+        'INSERT INTO student_profiles (user_id, student_number, program, year_level, section) VALUES (?, ?, ?, ?, ?)',
+        [userId, studentNumber, program || null, yearLevel || null, section || null],
       );
     }
     await writeAudit(connection, userId, `${role}_SELF_REGISTERED`, 'users', userId, { username, role });
@@ -117,6 +118,7 @@ export async function login(request: Request, response: Response): Promise<void>
 
   const identifier = typeof request.body?.identifier === 'string' ? request.body.identifier.trim() : '';
   const password = typeof request.body?.password === 'string' ? request.body.password : '';
+  const rememberMe = request.body?.rememberMe === true;
   if (!identifier || !password || identifier.length > 254 || password.length > 200) {
     response.status(400).json({ error: 'Enter your username or email and password.' });
     return;
@@ -155,7 +157,7 @@ export async function login(request: Request, response: Response): Promise<void>
     response.status(403).json({ error: 'This account has no assigned library role.' });
     return;
   }
-  setSessionCookie(response, createSessionToken(user));
+  setSessionCookie(response, createSessionToken(user, rememberMe), rememberMe);
   response.json({ user });
 }
 

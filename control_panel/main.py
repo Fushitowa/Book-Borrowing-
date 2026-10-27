@@ -114,10 +114,16 @@ class LibraryControlPanel:
         header.pack_propagate(False)
         brand = tk.Frame(header, bg="#101d16")
         brand.pack(fill="x", padx=28, pady=(22, 16))
-        tk.Label(brand, text="C", bg="#263c2e", fg=GREEN, font=("Georgia", 20, "bold"), width=2, height=1).pack(side="left")
+        mark_path = ROOT / "frontend" / "public" / "carbonell-library-mark.png"
+        try:
+            self.brand_image = tk.PhotoImage(file=str(mark_path)).subsample(8, 8)
+            tk.Label(brand, image=self.brand_image, bg="#101d16", bd=0, width=42, height=42).pack(side="left")
+        except tk.TclError:
+            self.brand_image = None
+            tk.Label(brand, text="C", bg="#263c2e", fg=GREEN, font=("Georgia", 20, "bold"), width=2, height=1).pack(side="left")
         title_block = tk.Frame(brand, bg="#101d16")
         title_block.pack(side="left", padx=12)
-        tk.Label(title_block, text="School Library", bg="#101d16", fg="#f0f5ef", font=("Segoe UI Semibold", 16)).pack(anchor="w")
+        tk.Label(title_block, text="Carbonell Library", bg="#101d16", fg="#f0f5ef", font=("Segoe UI Semibold", 16)).pack(anchor="w")
         tk.Label(title_block, text="LOCAL DEVELOPMENT CONTROL PANEL", bg="#101d16", fg="#91aa98", font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(3, 0))
         self.overall_label = tk.Label(brand, text="READY", bg="#253a2b", fg="#c9e8d0", font=("Segoe UI", 8, "bold"), padx=12, pady=7)
         self.overall_label.pack(side="right", pady=6)
