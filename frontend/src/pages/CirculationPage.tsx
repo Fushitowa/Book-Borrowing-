@@ -12,6 +12,9 @@ export function Circulation({ notify }: { notify: (notice: Notice) => void }) {
   const selectedStudent = students.find((student) => student.id === Number(selectedBorrower));
   const checkout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = event.currentTarget; setSaving(true); const data = new FormData(form);
+    const borrower = students.find((student) => student.id === Number(data.get('borrowerId')));
+    const copy = copies.find((item) => item.id === Number(data.get('copyId')));
+    if (!borrower || !copy || !window.confirm(`Confirm checkout of “${copy.title}” to ${borrower.name}?`)) { setSaving(false); return; }
     try { const selectedCopy = copies.find((copy) => copy.id === Number(data.get('copyId'))); await api('/loans', { method: 'POST', body: JSON.stringify({ borrowerId: Number(data.get('borrowerId')), copyId: Number(data.get('copyId')), reservationId: selectedCopy?.reservationId }) }); notify({ kind: 'success', message: 'Checkout recorded. The student can see this loan now.' }); setCopies((current) => current.filter((copy) => copy.id !== Number(data.get('copyId')))); setSelectedBorrower(''); form.reset(); }
     catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Checkout failed.' }); }
     finally { setSaving(false); }

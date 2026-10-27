@@ -22,6 +22,7 @@ export function BorrowingRequests({ notify }: { notify: (notice: Notice) => void
   }, [notify]);
   useEffect(load, [load]);
   const approve = async (item: RequestItem) => {
+    if (!window.confirm(`Approve ${item.student}’s request for “${item.title}”? This records approval only; the book is not borrowed until a copy is issued.`)) return;
     setBusy(item.id);
     try { await api(`/borrowing-requests/${item.id}/approve`, { method: 'POST' }); notify({ kind: 'success', message: `Approved ${item.student}’s request. Issue the copy when they collect it.` }); load(); }
     catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not approve request.' }); }
@@ -30,6 +31,7 @@ export function BorrowingRequests({ notify }: { notify: (notice: Notice) => void
   const issue = async (item: RequestItem) => {
     const copyId = Number(selected[item.id]);
     if (!copyId) { notify({ kind: 'error', message: 'Choose an available physical copy to issue.' }); return; }
+    if (!window.confirm(`Confirm you are handing “${item.title}” to ${item.student}? The checkout and due date will be recorded now.`)) return;
     setBusy(item.id);
     try { await api(`/borrowing-requests/${item.id}/issue`, { method: 'POST', body: JSON.stringify({ copyId }) }); notify({ kind: 'success', message: `Issued “${item.title}” to ${item.student}.` }); load(); }
     catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not issue this copy.' }); }

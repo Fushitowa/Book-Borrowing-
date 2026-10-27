@@ -10,6 +10,7 @@ export function Reservations({ user, notify, onGo }: { user: User; notify: (noti
   const reload = useCallback(() => { api<{ items: Reservation[] }>('/reservations').then((result) => setItems(result.items)).catch((error) => notify({ kind: 'error', message: error.message })); }, [notify]);
   useEffect(reload, [reload]);
   const cancel = async (item: Reservation) => {
+    if (!window.confirm(`Cancel the reservation for “${item.title}”?`)) return;
     try { await api(`/reservations/${item.id}/cancel`, { method: 'POST' }); notify({ kind: 'success', message: 'Reservation cancelled.' }); reload(); }
     catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not cancel reservation.' }); }
   };
