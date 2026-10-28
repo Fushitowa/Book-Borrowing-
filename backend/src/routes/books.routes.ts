@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
 import { bookCoversDirectory, bookCoversPublicPath } from '../config/bookCovers.js';
@@ -171,6 +171,67 @@ booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), parseBookCover, async 
   } catch (error) {
     await connection.rollback().catch(() => undefined);
     if (storedCoverPath) await unlink(storedCoverPath).catch(() => undefined);
+    next(error);
+  } finally { connection.release(); }
+});
+
+booksRouter.delete('/:bookId', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+  const bookId = Number(request.params.bookId);
+  if (!Number.isSafeInteger(bookId) || bookId < 1) {
+    response.status(400).json({ error: 'Choose a valid catalog title.' }); return;
+  }
+
+  const connection = await databasePool.getConnection();
+  let coverImageUrl: string | null = null;
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<any[]>(
+      `SELECT b.id, b.title, b.cover_image_url AS coverImageUrl,
+          (SELECT COUNT(*) FROM book_copies bc WHERE bc.book_id = b.id) AS copyCount,
+          EXISTS (SELECT 1 FROM book_copies bc JOIN loans l ON l.copy_id = bc.id WHERE bc.book_id = b.id) AS hasLoans,
+          EXISTS (SELECT 1 FROM reservations r WHERE r.book_id = b.id) AS hasReservations,
+          EXISTS (SELECT 1 FROM borrowing_requests br WHERE br.book_id = b.id) AS hasRequests
+         FROM books b WHERE b.id = ? FOR UPDATE`, [bookId]);
+    if (!rows.length) {
+      await connection.rollback();
+      response.status(404).json({ error: 'Book title not found.' }); return;
+    }
+    const book = rows[0];
+    if (book.hasLoans || book.hasReservations || book.hasRequests) {
+      await connection.rollback();
+      response.status(409).json({ error: 'This title has borrowing, request, or reservation history. It cannot be deleted because those library records must be preserved.' }); return;
+    }
+
+    coverImageUrl = book.coverImageUrl ?? null;
+    await writeAudit(connection, (request as any).auth.id, 'BOOK_DELETED', 'books', bookId, {
+      title: book.title,
+      removedUncirculatedCopies: Number(book.copyCount),
+    });
+    await connection.execute('DELETE FROM book_copies WHERE book_id = ?', [bookId]);
+    await connection.execute('DELETE FROM books WHERE id = ?', [bookId]);
+    await connection.commit();
+
+    const coverPrefix = `${bookCoversPublicPath}/`;
+    if (coverImageUrl?.startsWith(coverPrefix)) {
+      const filename = coverImageUrl.slice(coverPrefix.length);
+      if (filename && basename(filename) === filename) {
+        await unlink(resolve(bookCoversDirectory, filename)).catch((error: { code?: string }) => {
+          if (error.code !== 'ENOENT') console.error('Could not remove deleted book cover image.');
+        });
+      }
+    }
+    response.json({ message: 'Book title deleted.' });
+  } catch (error) {
+    await connection.rollback().catch(() => undefined);
+    const databaseCode = (error as { code?: string } | null)?.code;
+    if (databaseCode === 'ER_ROW_IS_REFERENCED_2') {
+      response.status(409).json({ error: 'This title is linked to library activity and cannot be deleted. Keep it in the catalog to preserve those records.' });
+      return;
+    }
+    if (databaseCode === 'ER_TABLEACCESS_DENIED_ERROR') {
+      response.status(503).json({ error: 'The database account is missing the limited permission needed to delete unused book titles. Apply the book-delete permissions in database/migrations, then retry.' });
+      return;
+    }
     next(error);
   } finally { connection.release(); }
 });

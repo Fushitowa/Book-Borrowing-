@@ -85,7 +85,7 @@ The reservation-to-loan relationship is enforced from `loans` to `reservations`;
 - IDs and matching FKs are all `BIGINT UNSIGNED`; relationship tables use matching type/sign on both sides.
 - Catalog, copy, borrower, loan, renewal, and reservation references use `RESTRICT` to preserve history and prevent deleting referenced records.
 - Publisher deletion sets `books.publisher_id` to NULL. Deleting a user cascades only to role assignments, student profile, and notifications; loans/reservations restrict user deletion. Normal account removal is a status change, not a DELETE.
-- Deleting a book cascades its author/category join rows, but is restricted while physical copies or reservations exist. Remove or withdraw copies through status instead of deleting them.
+- Deleting a book cascades its author/category join rows and removes only uncirculated physical copies in the same transaction. Deletion is restricted when loans, borrowing requests, or reservations exist, so library history remains intact.
 - Staff attribution FKs use `SET NULL` so deactivated/removed staff do not erase circulation history. Audit actor is likewise nullable; the audit event remains.
 
 ## TypeScript/mysql2 application connection
@@ -97,7 +97,7 @@ The application includes sign-in, role checks, catalog and copy workflows, stude
 ## Security and backup guidance
 
 - Hash passwords in the backend with Argon2id or bcrypt; store only the encoded hash in `password_hash`. Do not seed a default administrator password.
-- Grant the app database account only table-level `SELECT`, `INSERT`, and `UPDATE` permissions it needs; deny `UPDATE`/`DELETE` on `audit_logs` and avoid application `DELETE` privileges. Schema changes belong to a separate admin account.
+- Grant the app database account only the table-level SELECT, INSERT, and UPDATE permissions it needs. Book-title removal additionally requires narrowly scoped DELETE on books and book_copies (see migrations/20261031_book_delete_privileges.sql); keep audit_logs protected and avoid broad application DELETE grants. Schema changes belong to a separate admin account.
 - Keep secrets in an ignored `.env` file locally and a secrets manager/environment configuration in deployment. Use HTTPS, rate-limit login, and audit privileged account/role and circulation changes.
 - Restrict phpMyAdmin and XAMPP to local development; do not expose the XAMPP stack or phpMyAdmin publicly.
 - Back up with a consistent database dump (for a small school library, scheduled `mysqldump`/`mariadb-dump` plus encrypted off-machine copies is suitable). Keep multiple retention points, protect backups with least-privilege access, and periodically test restore into a separate database. A backup is not verified until restore succeeds.

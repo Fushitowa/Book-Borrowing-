@@ -428,3 +428,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .book-cover.cover-with-image{width:31px;height:43px;overflow:hidden;padding:0;background:#f0f2ed}
 .book-cover.cover-with-image img{display:block;width:100%;height:100%;object-fit:cover}
 @media(max-width:600px){.cover-upload-card{gap:11px;padding:10px}.cover-upload-preview{width:52px;height:70px}.cover-upload-copy strong{max-width:min(60vw,280px)}}
+
+.delete-book-action{color:#9c4c43;border-color:#ead3ce}
+.delete-book-action:hover{border-color:#bc776a;background:#fff8f6;color:#843b33}
+.delete-book-action:focus-visible,.danger-button:focus-visible{outline:3px solid #d8a59b;outline-offset:2px}
+.danger-button{min-height:37px;padding:0 14px;border:1px solid #9b4d42;border-radius:7px;background:#9b4d42;color:#fff;font-size:11px;font-weight:700;transition:background .18s,border-color .18s}
+.danger-button:hover{border-color:#803b33;background:#803b33}
+.danger-button:disabled{opacity:.62;cursor:not-allowed}
+.delete-confirmation{display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;align-items:start;padding:14px;border:1px solid #efd9d4;border-radius:9px;background:#fcf5f2}
+.delete-confirmation-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#f4e3df;color:#93483e;font-family:Georgia,serif;font-size:18px;font-weight:700}
+.delete-confirmation strong{display:block;color:#35483d;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.delete-confirmation p{margin:5px 0 0;color:#7e736f;font-size:10px;line-height:1.6}
+@media(max-width:600px){.delete-confirmation{grid-template-columns:30px minmax(0,1fr);gap:9px;padding:12px}.delete-book-action{min-height:40px}}
+.delete-error{padding:10px 12px;border:1px solid #efd0cb;border-radius:7px;background:#fff2ef;color:#91483e;font-size:10px;line-height:1.55}
