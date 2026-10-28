@@ -12,7 +12,7 @@ Target the database server to **MySQL 8.0.16+ or MariaDB 10.4+**, with InnoDB an
 
 All surrogate `id` values are `BIGINT UNSIGNED AUTO_INCREMENT`; foreign keys use the exact same type and sign. All text uses the database's `utf8mb4` character set. See [school_library.sql](schema/school_library.sql) for every column definition, index, and constraint.
 
-For the existing local database, apply the college-profile, borrowing-request, approval/issue split, and notification-deduplication migrations once each and in order. The approval/issue migration preserves existing approved requests that already created loans by converting them to ISSUED. New installations should import the current schema instead of running these migrations.
+For the existing local database, apply the college-profile, borrowing-request, approval/issue split, notification-deduplication, and book-cover migrations once each as documented in the project README. The approval/issue migration preserves existing approved requests that already created loans by converting them to ISSUED. New installations should import the current schema instead of running these migrations.
 
 | Table | Main columns and types | Purpose and key relationships |
 |---|---|---|
@@ -24,7 +24,7 @@ For the existing local database, apply the college-profile, borrowing-request, a
 | `publishers` | `id BIGINT UNSIGNED`, `name VARCHAR(180)`, `created_at DATETIME` | Normalized publisher names, referenced optionally by `books`. |
 | `authors` | `id BIGINT UNSIGNED`, `display_name VARCHAR(180)`, `created_at DATETIME` | Normalized author records, related to books through `book_authors`. |
 | `categories` | `id BIGINT UNSIGNED`, `parent_category_id BIGINT UNSIGNED NULL`, `name VARCHAR(120)`, `description VARCHAR(500)`, `created_at DATETIME` | Subject taxonomy with optional parent category. A book may have several categories. |
-| `books` | `id BIGINT UNSIGNED`, `isbn VARCHAR(20) NULL`, title/subtitle `VARCHAR(255)`, edition `VARCHAR(80)`, `publication_year SMALLINT UNSIGNED`, `language_code VARCHAR(10)`, `publisher_id BIGINT UNSIGNED NULL`, `description TEXT`, timestamps | Catalog-level title/edition. Nullable ISBN supports books without one; unique ISBN prevents duplicate edition records where known. |
+| `books` | `id BIGINT UNSIGNED`, `isbn VARCHAR(20) NULL`, title/subtitle `VARCHAR(255)`, edition `VARCHAR(80)`, `publication_year SMALLINT UNSIGNED`, `language_code VARCHAR(10)`, `publisher_id BIGINT UNSIGNED NULL`, `description TEXT`, `cover_image_url VARCHAR(255) NULL`, timestamps | Catalog-level title/edition. Optional cover images are stored as generated filenames under `backend/uploads/book-covers`; the nullable path keeps existing records valid. Nullable ISBN supports books without one; unique ISBN prevents duplicate edition records where known. |
 | `book_authors` | `book_id, author_id BIGINT UNSIGNED`, `author_order SMALLINT UNSIGNED` | Many-to-many title/author relation and display order. Composite PK prevents duplicate author links; unique `(book_id, author_order)` keeps order slots distinct. |
 | `book_categories` | `book_id, category_id BIGINT UNSIGNED` | Many-to-many title/category relation; composite PK prevents duplicate assignments. |
 | `book_copies` | `id BIGINT UNSIGNED`, `book_id BIGINT UNSIGNED`, `barcode VARCHAR(80)`, `copy_status ENUM`, `shelf_location VARCHAR(100)`, `acquired_at DATE`, `notes VARCHAR(1000)`, timestamps | Individually tracked physical copies. Barcode is unique; copy status records circulation condition/lifecycle, not availability. |

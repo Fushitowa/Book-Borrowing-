@@ -78,6 +78,7 @@ Open the Vite URL printed in the second terminal (normally `http://localhost:517
 - Public student account creation and invitation-protected librarian registration; administrator accounts remain provisioned only from the local command
 - Staff can provision students and admins can deactivate/reactivate student accounts
 - Catalog title search, normalized author/publisher/category links, and separate physical copy/barcode management
+- Optional JPG, PNG, and WebP cover images on catalog titles, with upload previews and server-side type and size checks
 - Staff dashboard metrics and recent circulation activity
 - Student checkout with active-loan limits and database-backed duplicate-copy protection
 - Return processing with good or damaged condition, loss handling, and staff copy repair/withdrawal controls
@@ -125,4 +126,10 @@ Your current database already has the college profile and borrowing request tabl
 ```powershell
 Get-Content -Raw -LiteralPath "database/migrations/20261029_separate_request_approval_from_issue.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
 Get-Content -Raw -LiteralPath "database/migrations/20261030_student_due_reminder_deduplication.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
+```
+
+The book-cover feature adds one nullable column to the existing `books` table. Apply this additional migration once using the MySQL administrator account (the restricted `library_app` account intentionally cannot change the schema), then restart the backend:
+
+```powershell
+Get-Content -Raw -LiteralPath "database/migrations/20261028_book_cover_image.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
 ```

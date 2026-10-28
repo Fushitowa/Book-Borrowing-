@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { databasePool, verifyDatabaseConnection } from './config/database.js';
+import { bookCoversDirectory, bookCoversPublicPath } from './config/bookCovers.js';
 import { authRouter } from './routes/auth.routes.js';
 import { booksRouter } from './routes/books.routes.js';
 import { dashboardRouter } from './routes/dashboard.routes.js';
@@ -25,6 +26,7 @@ app.use((_request, response, next) => {
 });
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173', credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+app.use(bookCoversPublicPath, express.static(bookCoversDirectory, { dotfiles: 'deny', index: false, immutable: true, maxAge: '1y' }));
 
 app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);

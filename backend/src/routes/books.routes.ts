@@ -1,10 +1,52 @@
-import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { Router, type RequestHandler } from 'express';
+import multer from 'multer';
+import { bookCoversDirectory, bookCoversPublicPath } from '../config/bookCovers.js';
 import { databasePool } from '../config/database.js';
 import { requireAuth, requireRoles } from '../middleware/auth.middleware.js';
 import { writeAudit } from '../services/audit.service.js';
 import { assignNextReservation } from '../services/reservation.service.js';
 
 export const booksRouter = Router();
+
+const allowedCoverTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const uploadCover = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1, fields: 8, fieldSize: 8 * 1024 },
+  fileFilter: (_request, file, callback) => {
+    if (!allowedCoverTypes.has(file.mimetype)) {
+      callback(new Error('Choose a JPG, PNG, or WebP image for the book cover.'));
+      return;
+    }
+    callback(null, true);
+  },
+});
+
+const parseBookCover: RequestHandler = (request, response, next) => {
+  uploadCover.single('cover')(request, response, (error: unknown) => {
+    if (!error) { next(); return; }
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      response.status(413).json({ error: 'Book cover images must be 3 MB or smaller.' });
+      return;
+    }
+    response.status(400).json({ error: error instanceof Error ? error.message : 'Could not read the book cover image.' });
+  });
+};
+
+function getCoverExtension(file: Express.Multer.File): string | null {
+  const bytes = file.buffer;
+  if (file.mimetype === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return '.jpg';
+  if (file.mimetype === 'image/png' && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return '.png';
+  if (file.mimetype === 'image/webp' && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return '.webp';
+  return null;
+}
+
+function normalizeNames(value: unknown, maxItems: number): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return [...new Set(values.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean))].slice(0, maxItems);
+}
 
 booksRouter.get('/available-copies', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
   try {
@@ -28,6 +70,7 @@ booksRouter.get('/', requireAuth, async (request, response, next) => {
     const search = `%${query}%`;
     const [rows] = await databasePool.execute<any[]>(
       `SELECT b.id, b.isbn, b.title, b.subtitle, b.edition, b.publication_year AS publicationYear,
+          b.cover_image_url AS coverImageUrl,
           p.name AS publisher,
           (SELECT GROUP_CONCAT(a.display_name ORDER BY ba.author_order SEPARATOR ', ')
              FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id) AS authors,
@@ -60,7 +103,7 @@ booksRouter.get('/', requireAuth, async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), parseBookCover, async (request, response, next) => {
   const { title, subtitle, isbn, edition, publicationYear, publisher, authors, categories } = request.body ?? {};
   if (typeof title !== 'string' || !title.trim() || title.trim().length > 255) {
     response.status(400).json({ error: 'Book title is required and must be 255 characters or fewer.' }); return;
@@ -71,15 +114,16 @@ booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respon
   }
   if (publisher && (typeof publisher !== 'string' || publisher.trim().length > 180)) { response.status(400).json({ error: 'Publisher name must be 180 characters or fewer.' }); return; }
   if (subtitle && (typeof subtitle !== 'string' || subtitle.trim().length > 255)) { response.status(400).json({ error: 'Subtitle must be 255 characters or fewer.' }); return; }
-  const authorNames: string[] = Array.isArray(authors)
-    ? [...new Set(authors.filter((author: unknown): author is string => typeof author === 'string').map((author: string) => author.trim()).filter(Boolean))].slice(0, 10)
-    : [];
+  const coverExtension = request.file ? getCoverExtension(request.file) : null;
+  if (request.file && !coverExtension) { response.status(400).json({ error: 'The selected cover does not match a supported JPG, PNG, or WebP image.' }); return; }
+  const authorNames = normalizeNames(authors, 10);
   if (authorNames.some((author) => author.length > 180)) { response.status(400).json({ error: 'Author names must be 180 characters or fewer.' }); return; }
-  const categoryNames: string[] = Array.isArray(categories)
-    ? [...new Set(categories.filter((category: unknown): category is string => typeof category === 'string').map((category: string) => category.trim()).filter(Boolean))].slice(0, 10)
-    : [];
+  const categoryNames = normalizeNames(categories, 10);
   if (categoryNames.some((category) => category.length > 120)) { response.status(400).json({ error: 'Category names must be 120 characters or fewer.' }); return; }
+  const coverFilename = coverExtension ? `${randomUUID()}${coverExtension}` : null;
+  const coverImageUrl = coverFilename ? `${bookCoversPublicPath}/${coverFilename}` : null;
   const connection = await databasePool.getConnection();
+  let storedCoverPath: string | null = null;
   try {
     await connection.beginTransaction();
     let publisherId: number | null = null;
@@ -92,8 +136,8 @@ booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respon
       }
     }
     const [insert] = await connection.execute<any>(
-      'INSERT INTO books (isbn, title, subtitle, edition, publication_year, publisher_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [isbn?.trim() || null, title.trim(), subtitle?.trim() || null, edition?.trim() || null, publicationYear ? Number(publicationYear) : null, publisherId],
+      'INSERT INTO books (isbn, title, subtitle, edition, publication_year, publisher_id, cover_image_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [isbn?.trim() || null, title.trim(), subtitle?.trim() || null, edition?.trim() || null, publicationYear ? Number(publicationYear) : null, publisherId, coverImageUrl],
     );
     const bookId = Number(insert.insertId);
     for (const [index, name] of authorNames.entries()) {
@@ -116,11 +160,17 @@ booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respon
       }
       await connection.execute('INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)', [bookId, categoryId]);
     }
+    if (request.file && coverFilename) {
+      await mkdir(bookCoversDirectory, { recursive: true });
+      storedCoverPath = resolve(bookCoversDirectory, coverFilename);
+      await writeFile(storedCoverPath, request.file.buffer, { flag: 'wx' });
+    }
     await writeAudit(connection, (request as any).auth.id, 'BOOK_CREATED', 'books', bookId, { title: title.trim(), isbn: isbn?.trim() || null, categories: categoryNames });
     await connection.commit();
     response.status(201).json({ id: bookId, message: 'Book added to the catalog.' });
   } catch (error) {
-    await connection.rollback();
+    await connection.rollback().catch(() => undefined);
+    if (storedCoverPath) await unlink(storedCoverPath).catch(() => undefined);
     next(error);
   } finally { connection.release(); }
 });

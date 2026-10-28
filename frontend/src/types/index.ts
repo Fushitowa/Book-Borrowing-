@@ -16,6 +16,7 @@ export interface Book {
   edition: string | null;
   publicationYear: number | null;
   publisher: string | null;
+  coverImageUrl: string | null;
   authors: string | null;
   categories: string | null;
   totalCopies: number;
