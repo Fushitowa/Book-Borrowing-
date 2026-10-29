@@ -238,22 +238,25 @@ booksRouter.delete('/:bookId', requireRoles('ADMIN', 'LIBRARIAN'), async (reques
 
 booksRouter.post('/:bookId/copies', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
   const bookId = Number(request.params.bookId);
-  const barcode = typeof request.body?.barcode === 'string' ? request.body.barcode.trim() : '';
-  const shelfLocation = typeof request.body?.shelfLocation === 'string' ? request.body.shelfLocation.trim() : null;
-  if (!Number.isSafeInteger(bookId) || bookId < 1 || !barcode || barcode.length > 80 || (shelfLocation && shelfLocation.length > 100)) {
-    response.status(400).json({ error: 'Enter a valid book and barcode. Shelf location must be 100 characters or fewer.' }); return;
+  const quantity = Number(request.body?.quantity);
+  if (!Number.isSafeInteger(bookId) || bookId < 1 || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
+    response.status(400).json({ error: 'Enter a valid book and a copy quantity from 1 to 100.' }); return;
   }
   const connection = await databasePool.getConnection();
   try {
     await connection.beginTransaction();
     const [bookRows] = await connection.execute<any[]>('SELECT id FROM books WHERE id = ? FOR UPDATE', [bookId]);
     if (!bookRows.length) { await connection.rollback(); response.status(404).json({ error: 'Book not found.' }); return; }
-    const [insert] = await connection.execute<any>('INSERT INTO book_copies (book_id, barcode, shelf_location) VALUES (?, ?, ?)', [bookId, barcode, shelfLocation || null]);
-    const copyId = Number(insert.insertId);
-    await assignNextReservation(connection, bookId, copyId);
-    await writeAudit(connection, (request as any).auth.id, 'BOOK_COPY_ADDED', 'book_copies', copyId, { bookId, barcode });
+    for (let index = 0; index < quantity; index += 1) {
+      const barcode = `CB-${bookId}-${randomUUID()}`;
+      const [insert] = await connection.execute<any>(
+        'INSERT INTO book_copies (book_id, barcode) VALUES (?, ?)', [bookId, barcode]);
+      const copyId = Number(insert.insertId);
+      await assignNextReservation(connection, bookId, copyId);
+      await writeAudit(connection, (request as any).auth.id, 'BOOK_COPY_ADDED', 'book_copies', copyId, { bookId, barcode });
+    }
     await connection.commit();
-    response.status(201).json({ id: copyId, message: 'Copy added to the catalog.' });
+    response.status(201).json({ count: quantity, message: `${quantity} physical ${quantity === 1 ? 'copy' : 'copies'} added to the catalog.` });
   } catch (error) { await connection.rollback(); next(error); }
   finally { connection.release(); }
 });

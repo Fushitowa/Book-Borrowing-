@@ -68,5 +68,37 @@ export function AdminSettings({ notify }: { notify: (notice: Notice) => void }) 
     catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not save borrowing policy.' }); }
     finally { setSaving(false); }
   };
-  return <><PageHeading eyebrow="ADMINISTRATION · CONFIGURATION" title="System settings" subtitle="Manage the default student borrowing policy."/><section className="surface admin-settings-surface"><div className="section-heading"><div><h2>Student loan policy</h2><p>These limits are applied when staff check out a book or students place a reservation.</p></div><span className="results-count">STUDENT</span></div>{loading ? <div className="empty-state">Loading policy…</div> : policy && <form className="admin-settings-form" onSubmit={save}><label className="field"><span className="field-label"><span>Loan period (days)</span><small>1–365 days</small></span><input name="loanPeriodDays" type="number" min="1" max="365" defaultValue={policy.loanPeriodDays} required /></label><label className="field"><span className="field-label"><span>Maximum active loans</span><small>1–50 loans</small></span><input name="maxActiveLoans" type="number" min="1" max="50" defaultValue={policy.maxActiveLoans} required /></label><label className="field"><span className="field-label"><span>Maximum renewals</span><small>0–10 renewals</small></span><input name="maxRenewals" type="number" min="0" max="10" defaultValue={policy.maxRenewals} required /></label><label className="field"><span className="field-label"><span>Renewal extension (days)</span><small>0–365 days</small></span><input name="renewalExtensionDays" type="number" min="0" max="365" defaultValue={policy.renewalExtensionDays} required /></label><label className="field"><span className="field-label"><span>Maximum active reservations</span><small>0–50 reservations</small></span><input name="maxActiveReservations" type="number" min="0" max="50" defaultValue={policy.maxActiveReservations} required /></label><div className="admin-settings-note">Changes apply to future checkouts and reservation requests. Existing due dates are not changed.</div><button className="primary-button" disabled={saving}>{saving ? 'Saving policy…' : 'Save student policy'}</button></form>}</section></>;
+  return <>
+    <PageHeading eyebrow="YOUR LIBRARY" title="Borrowing settings" subtitle="Set simple borrowing rules for your students." />
+    <section className="surface admin-settings-surface">
+      <div className="section-heading">
+        <div><h2>Student borrowing rules</h2><p>These settings guide new checkouts, renewals, and reservations.</p></div>
+        <span className="results-count">FOR STUDENTS</span>
+      </div>
+      {loading ? <div className="empty-state">Loading your library’s settings…</div> : policy && <form className="admin-settings-form" onSubmit={save}>
+        <label className="field">
+          <span className="field-label"><span>How long can a student keep a book?</span><small>1 to 365 days</small></span>
+          <input name="loanPeriodDays" type="number" min="1" max="365" defaultValue={policy.loanPeriodDays} required />
+        </label>
+        <label className="field">
+          <span className="field-label"><span>How many books can a student borrow at once?</span><small>1 to 50 books</small></span>
+          <input name="maxActiveLoans" type="number" min="1" max="50" defaultValue={policy.maxActiveLoans} required />
+        </label>
+        <label className="field">
+          <span className="field-label"><span>How many times can a student renew a book?</span><small>Enter 0 to turn renewals off</small></span>
+          <input name="maxRenewals" type="number" min="0" max="10" defaultValue={policy.maxRenewals} required />
+        </label>
+        <label className="field">
+          <span className="field-label"><span>How many extra days does a renewal add?</span><small>0 to 365 days</small></span>
+          <input name="renewalExtensionDays" type="number" min="0" max="365" defaultValue={policy.renewalExtensionDays} required />
+        </label>
+        <label className="field">
+          <span className="field-label"><span>How many books can a student reserve at once?</span><small>Enter 0 to turn reservations off</small></span>
+          <input name="maxActiveReservations" type="number" min="0" max="50" defaultValue={policy.maxActiveReservations} required />
+        </label>
+        <div className="admin-settings-note">Your changes apply to new checkouts and reservations. Books students already borrowed keep their current due dates.</div>
+        <button className="primary-button" disabled={saving}>{saving ? 'Saving your rules…' : 'Save borrowing rules'}</button>
+      </form>}
+    </section>
+  </>;
 }

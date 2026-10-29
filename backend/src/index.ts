@@ -24,7 +24,7 @@ app.use((_request, response, next) => {
   response.setHeader('Referrer-Policy', 'same-origin');
   next();
 });
-app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173', credentials: true }));
+app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5174', credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 app.use(bookCoversPublicPath, express.static(bookCoversDirectory, { dotfiles: 'deny', index: false, immutable: true, maxAge: '1y' }));
 

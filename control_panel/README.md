@@ -14,8 +14,8 @@ The panel reads only `DB_HOST`, `DB_PORT`, and `PORT` from `backend/.env` to det
 
 ## Buttons
 
-- **Start All** starts the detected MySQL Windows service, waits for the configured database port, starts the backend and waits for `/api/health`, then starts the frontend. It still tries to start the frontend if MySQL or the API fails, and reports each service's result. The browser opens automatically after the frontend is ready by default.
-- **Start Database**, **Start API**, and **Start Frontend** start one service at a time. Start Frontend also opens the browser when automatic opening is enabled.
+- **Start All** starts the detected MySQL Windows service, waits for the configured database port, starts the backend and allows up to 90 seconds for `/api/health` to become ready (including first-run TypeScript compilation), then starts the frontend. It still tries to start the frontend if MySQL or the API fails, and reports each service's result. The browser opens automatically after the frontend is ready by default.
+- **Start Database**, **Start API**, and **Start Frontend** start one service at a time. Start Frontend also opens the browser when automatic opening is enabled. The panel verifies the Carbonell page before opening it; if another project occupies port 5174, it reports the conflict instead of opening that project.
 - **Stop Apps** stops the frontend and backend processes started by this panel, including their child processes.
 - **Stop Database** requests that Windows stop the selected MySQL service.
 - **Open Web** starts the frontend if it is stopped, waits until it responds, then opens the site in your default browser.

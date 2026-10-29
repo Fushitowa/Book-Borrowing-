@@ -82,4 +82,5 @@ export interface NotificationItem {
 export interface DashboardData {
   stats: { titles: number; totalCopies: number; availableCopies: number; activeLoans: number; overdueLoans: number; students: number; pendingRequests: number; issuedToday: number; returnedToday: number };
   recentLoans: Loan[];
+  dailyActivity: { day: string; issued: number; returned: number }[];
 }

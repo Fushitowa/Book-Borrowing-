@@ -67,7 +67,8 @@ class LibraryControlPanel:
         self.db_host = self.settings.get("DB_HOST", "127.0.0.1")
         self.db_port = self._number_setting("DB_PORT", 3306)
         self.api_port = self._number_setting("PORT", 3000)
-        self.frontend_port = 5173
+        self.frontend_port = 5174
+        self.local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.lock = threading.Lock()
@@ -399,35 +400,39 @@ class LibraryControlPanel:
     def _health_ok(self) -> bool:
         url = f"http://127.0.0.1:{self.api_port}/api/health"
         try:
-            with urllib.request.urlopen(url, timeout=2) as response:
+            with self.local_http.open(url, timeout=2) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 return response.status == 200 and data.get("status") == "ok" and data.get("database") == "connected"
         except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError):
             return False
 
-    def _url_ready(self, url: str, timeout: int = 35) -> bool:
+    def _url_ready(self, url: str, timeout: int = 35, content_markers: tuple[bytes, ...] = ()) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
-                with urllib.request.urlopen(url, timeout=1.5) as response:
+                with self.local_http.open(url, timeout=1.5) as response:
                     if 200 <= response.status < 400:
-                        return True
+                        if not content_markers:
+                            return True
+                        body = response.read(64 * 1024)
+                        if all(marker in body for marker in content_markers):
+                            return True
             except (OSError, urllib.error.URLError, TimeoutError):
                 pass
             time.sleep(1)
         return False
 
-    def _start_process(self, key: str, command: str, ready_url: str, ready_label: str) -> None:
+    def _start_process(self, key: str, command: str, ready_url: str, ready_label: str, startup_timeout: int = 35, content_markers: tuple[bytes, ...] = ()) -> None:
         with self.lock:
             existing = self.processes.get(key)
         if existing and existing.poll() is None:
             self._post_log(f"{ready_label} process is already running; checking its web address…")
-            if self._url_ready(ready_url, timeout=35):
+            if self._url_ready(ready_url, timeout=startup_timeout, content_markers=content_markers):
                 self.events.put(("status", (key, "Running")))
                 return
             raise RuntimeError(f"{ready_label} process exists but did not respond at {ready_url}. Check its output, then use Stop Apps and retry.")
 
-        if self._url_ready(ready_url, timeout=2):
+        if self._url_ready(ready_url, timeout=2, content_markers=content_markers):
             self._post_log(f"{ready_label} is already responding at {ready_url}.", "success")
             self.events.put(("status", (key, "Running")))
             return
@@ -449,7 +454,7 @@ class LibraryControlPanel:
         with self.lock:
             self.processes[key] = process
         threading.Thread(target=self._read_process_output, args=(key, process), daemon=True).start()
-        if not self._url_ready(ready_url):
+        if not self._url_ready(ready_url, timeout=startup_timeout, content_markers=content_markers):
             if process.poll() is not None:
                 raise RuntimeError(f"{ready_label} exited before becoming ready. Review the activity log.")
             subprocess.run(
@@ -459,7 +464,7 @@ class LibraryControlPanel:
                 timeout=15,
                 creationflags=CREATE_NO_WINDOW,
             )
-            raise RuntimeError(f"{ready_label} did not respond within 35 seconds. Review the activity log.")
+            raise RuntimeError(f"{ready_label} did not respond within {startup_timeout} seconds. Review the activity log.")
         self.events.put(("status", (key, "Running")))
         self._post_log(f"{ready_label} is ready at {ready_url}.", "success")
 
@@ -477,10 +482,14 @@ class LibraryControlPanel:
     def _ensure_backend(self) -> None:
         if not self._tcp_ready(self.db_host, self.db_port):
             raise RuntimeError("Start the database first, or use Start All.")
-        self._start_process("backend", "npm run dev:backend", f"http://127.0.0.1:{self.api_port}/api/health", "Backend API")
+        self._start_process("backend", "npm run dev:backend", f"http://127.0.0.1:{self.api_port}/api/health", "Backend API", startup_timeout=90)
 
     def _ensure_frontend(self) -> None:
-        self._start_process("frontend", "npm run dev:frontend", f"http://127.0.0.1:{self.frontend_port}", "Frontend")
+        url = f"http://127.0.0.1:{self.frontend_port}"
+        markers = (b"<title>Carbonell Library", b"/src/main.tsx")
+        if self._tcp_ready("127.0.0.1", self.frontend_port) and not self._url_ready(url, timeout=2, content_markers=markers):
+            raise RuntimeError(f"Port {self.frontend_port} is already serving a different app. Close that app's development server, then start the Carbonell frontend again.")
+        self._start_process("frontend", "npm run dev:frontend", url, "Frontend", content_markers=markers)
 
     def start_frontend(self) -> None:
         open_after_start = self.auto_open.get()
@@ -580,7 +589,11 @@ class LibraryControlPanel:
             self.events.put(("status", ("backend", "Running")))
         else:
             self.events.put(("status", ("backend", "Stopped")))
-        if self._url_ready(f"http://127.0.0.1:{self.frontend_port}", timeout=2):
+        if self._url_ready(
+            f"http://127.0.0.1:{self.frontend_port}",
+            timeout=2,
+            content_markers=(b"<title>Carbonell Library", b"/src/main.tsx"),
+        ):
             self.events.put(("status", ("frontend", "Running")))
         else:
             self.events.put(("status", ("frontend", "Stopped")))

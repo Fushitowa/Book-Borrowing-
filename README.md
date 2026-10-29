@@ -70,7 +70,7 @@ Start Vite in the second:
 npm run dev:frontend
 ```
 
-Open the Vite URL printed in the second terminal (normally `http://localhost:5173`). The API is available at `http://localhost:3000`; `/api/health` reports whether its database check passed. Vite proxies `/api` requests to Express.
+Open the Vite URL printed in the second terminal (normally `http://localhost:5174`). The API is available at `http://localhost:3000`; `/api/health` reports whether its database check passed. Vite proxies `/api` requests to Express.
 
 ## Current workflows
 

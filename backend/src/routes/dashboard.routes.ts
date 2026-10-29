@@ -28,7 +28,7 @@ dashboardRouter.get('/student', requireRoles('STUDENT'), async (request, respons
 
 dashboardRouter.get('/stats', requireRoles('ADMIN', 'LIBRARIAN'), async (_request, response, next) => {
   try {
-    const [[bookRows], [totalCopyRows], [copyRows], [loanRows], [overdueRows], [studentRows], [recentRows], [requestRows], [issuedRows], [returnedRows]] = await Promise.all([
+    const [[bookRows], [totalCopyRows], [copyRows], [loanRows], [overdueRows], [studentRows], [recentRows], [requestRows], [issuedRows], [returnedRows], [activityRows]] = await Promise.all([
       databasePool.query<any[]>('SELECT COUNT(*) AS total FROM books'),
       databasePool.query<any[]>('SELECT COUNT(*) AS total FROM book_copies'),
       databasePool.query<any[]>("SELECT COUNT(*) AS total FROM book_copies bc WHERE bc.copy_status = 'IN_SERVICE' AND NOT EXISTS (SELECT 1 FROM loans WHERE loans.copy_id = bc.id AND loans.status = 'ACTIVE') AND NOT EXISTS (SELECT 1 FROM reservations WHERE reservations.allocated_copy_id = bc.id AND reservations.status = 'READY')"),
@@ -44,6 +44,24 @@ dashboardRouter.get('/stats', requireRoles('ADMIN', 'LIBRARIAN'), async (_reques
       databasePool.query<any[]>("SELECT COUNT(*) AS total FROM borrowing_requests WHERE status = 'PENDING'"),
       databasePool.query<any[]>("SELECT COUNT(*) AS total FROM loans WHERE checked_out_at >= UTC_DATE() AND checked_out_at < UTC_DATE() + INTERVAL 1 DAY"),
       databasePool.query<any[]>("SELECT COUNT(*) AS total FROM loans WHERE status = 'RETURNED' AND returned_at >= UTC_DATE() AND returned_at < UTC_DATE() + INTERVAL 1 DAY"),
+      databasePool.query<any[]>(`SELECT DATE_FORMAT(activity_date, '%Y-%m-%d') AS day,
+          SUM(issued_count) AS issued, SUM(returned_count) AS returned
+        FROM (
+          SELECT DATE(checked_out_at) AS activity_date, COUNT(*) AS issued_count, 0 AS returned_count
+          FROM loans
+          WHERE checked_out_at >= UTC_DATE() - INTERVAL 6 DAY
+            AND checked_out_at < UTC_DATE() + INTERVAL 1 DAY
+          GROUP BY DATE(checked_out_at)
+          UNION ALL
+          SELECT DATE(returned_at) AS activity_date, 0 AS issued_count, COUNT(*) AS returned_count
+          FROM loans
+          WHERE returned_at IS NOT NULL
+            AND returned_at >= UTC_DATE() - INTERVAL 6 DAY
+            AND returned_at < UTC_DATE() + INTERVAL 1 DAY
+          GROUP BY DATE(returned_at)
+        ) AS activity
+        GROUP BY activity_date
+        ORDER BY activity_date`),
     ]);
     response.json({
       stats: {
@@ -52,6 +70,7 @@ dashboardRouter.get('/stats', requireRoles('ADMIN', 'LIBRARIAN'), async (_reques
         pendingRequests: requestRows[0].total, issuedToday: issuedRows[0].total, returnedToday: returnedRows[0].total,
       },
       recentLoans: recentRows,
+      dailyActivity: activityRows,
     });
   } catch (error) { next(error); }
 });
