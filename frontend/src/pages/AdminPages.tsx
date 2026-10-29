@@ -12,27 +12,100 @@ function PageHeading({ eyebrow, title, subtitle, children }: { eyebrow: string; 
   return <div className="page-title-row"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{children}</div>;
 }
 
+function ReportsActivityChart({ data, loading }: { data: DashboardData | null; loading: boolean }) {
+  const dates = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date();
+    day.setUTCHours(0, 0, 0, 0);
+    day.setUTCDate(day.getUTCDate() - 6 + index);
+    return day.toISOString().slice(0, 10);
+  });
+  const activityByDate = new Map((data?.dailyActivity ?? []).map((entry) => [entry.day, entry] as const));
+  const activity = dates.map((day) => ({
+    day,
+    issued: Number(activityByDate.get(day)?.issued ?? 0),
+    returned: Number(activityByDate.get(day)?.returned ?? 0),
+  }));
+  const maxValue = Math.max(1, ...activity.flatMap((entry) => [entry.issued, entry.returned]));
+  const issuedTotal = activity.reduce((total, entry) => total + entry.issued, 0);
+  const returnedTotal = activity.reduce((total, entry) => total + entry.returned, 0);
+  const labelForDay = (value: string) => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'short' });
+  };
+
+  return <section className="surface report-activity-panel">
+    <div className="report-panel-heading"><div><span className="report-panel-kicker">WEEKLY TREND</span><h2>Circulation activity</h2><p>Checkouts and returns over the last seven days.</p></div><span className="report-period-pill">Last 7 days</span></div>
+    <div className="report-chart-legend">
+      <span><i className="report-legend-issued" /> Checked out <strong>{loading ? '—' : issuedTotal}</strong></span>
+      <span><i className="report-legend-returned" /> Returned <strong>{loading ? '—' : returnedTotal}</strong></span>
+    </div>
+    <div className="report-chart-plot" role="img" aria-label="Daily books checked out and returned over the last seven days">
+      <div className="report-bars-row">
+        {activity.map((entry) => <div className="report-day-column" key={entry.day}>
+          <div className="report-bar-pair">
+            <span className="report-bar report-bar-issued" title={`${entry.issued} checked out`} style={{ height: `${entry.issued ? Math.max(5, entry.issued / maxValue * 100) : 0}%` }} />
+            <span className="report-bar report-bar-returned" title={`${entry.returned} returned`} style={{ height: `${entry.returned ? Math.max(5, entry.returned / maxValue * 100) : 0}%` }} />
+          </div>
+          <span className="report-day-label">{labelForDay(entry.day)}</span>
+        </div>)}
+      </div>
+    </div>
+    {!loading && issuedTotal + returnedTotal === 0 && <p className="report-chart-empty">No circulation activity has been recorded this week.</p>}
+  </section>;
+}
+
 export function AdminReports({ notify, isLibrarian = false }: { notify: (notice: Notice) => void; isLibrarian?: boolean }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => { api<DashboardData>('/dashboard/stats').then(setData).catch((error) => notify({ kind: 'error', message: error.message })).finally(() => setLoading(false)); }, [notify]);
   const stats = data?.stats;
+  const reportDate = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   const exportSummary = () => {
     if (!stats) return;
-    const rows = [['Metric', 'Count'], ['Total book copies', stats.totalCopies], ['Registered students', stats.students], ['Currently borrowed', stats.activeLoans], ['Overdue loans', stats.overdueLoans], ['Catalog titles', stats.titles], ['Available copies', stats.availableCopies]];
+    const weeklyIssued = data?.dailyActivity.reduce((total, day) => total + Number(day.issued), 0) ?? 0;
+    const weeklyReturned = data?.dailyActivity.reduce((total, day) => total + Number(day.returned), 0) ?? 0;
+    const rows = [['Metric', 'Count'], ['Catalog titles', stats.titles], ['Total book copies', stats.totalCopies], ['Available copies', stats.availableCopies], ['Registered students', stats.students], ['Currently borrowed', stats.activeLoans], ['Overdue loans', stats.overdueLoans], ['Checked out today', stats.issuedToday], ['Returned today', stats.returnedToday], ['Checked out in the last 7 days', weeklyIssued], ['Returned in the last 7 days', weeklyReturned]];
     const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     link.download = `carbonell-library-summary-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click(); URL.revokeObjectURL(link.href);
   };
-  const cards = [
-    ['Total book copies', stats?.totalCopies, 'Physical items in the catalog', '▤', 'sage'],
-    ['Registered students', stats?.students, 'Active student accounts', '♙', 'blue'],
-    ['Currently borrowed', stats?.activeLoans, 'Active loans', '↗', 'gold'],
-    ['Overdue loans', stats?.overdueLoans, 'Past their due date', '◷', 'rose'],
-  ] as const;
-  return <><PageHeading eyebrow={isLibrarian ? 'LIBRARY OPERATIONS · REPORTS' : 'ADMINISTRATION · REPORTS'} title={isLibrarian ? 'Reports' : 'Reports & analytics'} subtitle="Current collection and circulation totals from the live library database."><button className="primary-button" onClick={exportSummary} disabled={!stats}>Export summary CSV</button></PageHeading><div className="stat-grid">{cards.map(([label, value, note, glyph, tint]) => <div className="stat-card" key={label}><div className="stat-top"><span>{label}</span><span className={`stat-icon ${tint}`}>{glyph}</span></div><div className="stat-value">{loading ? <span className="skeleton" /> : value ?? 0}</div><div className="stat-note">{note}</div></div>)}</div><section className="surface catalog-surface admin-report-details"><div className="section-heading"><div><h2>Collection snapshot</h2><p>Availability is calculated from copies, active loans, and ready reservations.</p></div></div><div className="admin-report-list"><div><span>Catalog titles</span><strong>{loading ? '—' : stats?.titles ?? 0}</strong></div><div><span>Copies available now</span><strong>{loading ? '—' : stats?.availableCopies ?? 0}</strong></div><div><span>Report generated</span><strong>{new Date().toLocaleString()}</strong></div></div></section></>;
+  const availablePercent = stats?.totalCopies ? Math.min(100, Math.round(stats.availableCopies / stats.totalCopies * 100)) : 0;
+  const borrowedPercent = stats?.totalCopies ? Math.min(100, Math.round(stats.activeLoans / stats.totalCopies * 100)) : 0;
+  return <>
+    <header className="reports-page-header">
+      <div><span className="report-page-kicker">{isLibrarian ? 'LIBRARY OPERATIONS' : 'CARBONELL COLLEGE LIBRARY'} · REPORTING</span><h1>{isLibrarian ? 'Library reports' : 'Reports & analytics'}</h1><p>Understand circulation and collection activity with live library data.</p></div>
+      <div className="reports-header-actions"><span>Updated {reportDate}</span><button className="primary-button" onClick={exportSummary} disabled={!stats}>↓ <span>Export report</span></button></div>
+    </header>
+    <div className="reports-workspace">
+      <div className="reports-main-column">
+        <ReportsActivityChart data={data} loading={loading} />
+        <section className="surface report-collection-panel">
+          <div className="report-panel-heading"><div><span className="report-panel-kicker">COLLECTION</span><h2>Availability overview</h2><p>See how your physical copies are being used.</p></div><span className="report-total-pill">{loading ? '—' : stats?.totalCopies ?? 0} total copies</span></div>
+          <div className="report-status-list">
+            <div className="report-status-item"><div className="report-status-heading"><span><i className="status-dot available-dot" /> Available to borrow</span><strong>{loading ? '—' : stats?.availableCopies ?? 0}<small> copies</small></strong></div><div className="report-status-track"><span className="available-track" style={{ width: `${loading ? 0 : availablePercent}%` }} /></div></div>
+            <div className="report-status-item"><div className="report-status-heading"><span><i className="status-dot borrowed-dot" /> Currently on loan</span><strong>{loading ? '—' : stats?.activeLoans ?? 0}<small> books</small></strong></div><div className="report-status-track"><span className="borrowed-track" style={{ width: `${loading ? 0 : borrowedPercent}%` }} /></div></div>
+          </div>
+        </section>
+      </div>
+      <aside className="reports-side-column">
+        <section className="report-circulation-card">
+          <span className="report-panel-kicker">CIRCULATION SNAPSHOT</span><h2>At a glance</h2><p>Today’s activity and current loans.</p>
+          <div className="report-circulation-row"><span>Checked out today</span><strong>{loading ? '—' : stats?.issuedToday ?? 0}</strong></div>
+          <div className="report-circulation-row"><span>Returned today</span><strong>{loading ? '—' : stats?.returnedToday ?? 0}</strong></div>
+          <div className="report-circulation-row"><span>Currently on loan</span><strong>{loading ? '—' : stats?.activeLoans ?? 0}</strong></div>
+          <div className="report-overdue-row"><span><i /> Overdue books</span><strong>{loading ? '—' : stats?.overdueLoans ?? 0}</strong></div>
+        </section>
+        <section className="surface report-library-card">
+          <div className="report-panel-heading"><div><span className="report-panel-kicker">YOUR LIBRARY</span><h2>Collection totals</h2></div></div>
+          <div className="report-total-row"><span>Catalog titles</span><strong>{loading ? '—' : stats?.titles ?? 0}</strong></div>
+          <div className="report-total-row"><span>Physical copies</span><strong>{loading ? '—' : stats?.totalCopies ?? 0}</strong></div>
+          <div className="report-total-row"><span>Student accounts</span><strong>{loading ? '—' : stats?.students ?? 0}</strong></div>
+        </section>
+      </aside>
+    </div>
+  </>;
 }
 
 export function AdminNotifications({ notify, isStudent = false }: { notify: (notice: Notice) => void; isStudent?: boolean }) {
