@@ -410,6 +410,16 @@
 .inventory-filters select{min-width:130px}
 @media(max-width:760px){.inventory-tools{align-items:flex-start;flex-direction:column}.inventory-filters{width:100%}.inventory-filters input{min-width:0;flex:1}.loan-search-row{margin-top:0}.admin-settings-form,.admin-report-list{grid-template-columns:1fr}}
 .student-request-list { display: grid; gap: 0; }
+.student-dashboard-panels{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.9fr);gap:16px;margin-bottom:18px}
+.student-dashboard-card{min-width:0;overflow:hidden}
+.student-dashboard-card .student-request-list{padding:0 17px}
+.student-reservations-link{margin-top:4px}
+.librarian-shortcut-grid{display:grid;gap:0;padding:0 13px 8px}
+.librarian-shortcut{width:100%;min-width:0;display:flex;align-items:center;gap:10px;padding:11px 4px;border:0;border-top:1px solid #edf0ed;background:#fff;text-align:left;color:#34483c}
+.librarian-shortcut:hover{background:#f8faf8}
+.librarian-shortcut>span:nth-child(2){display:grid;gap:4px;flex:1;min-width:0}
+.librarian-shortcut strong{font-size:10px;font-weight:700}.librarian-shortcut small{color:#829087;font-size:9px;line-height:1.4}
+.librarian-shortcut>b{color:#66806d;font-size:13px}
 .account-role-tabs { display: flex; gap: 6px; padding: 4px; margin: -6px 0 16px; width: fit-content; border: 1px solid #e5ebe6; border-radius: 9px; background: #edf1ed; }
 .account-role-tabs button { min-height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #718078; font-size: 11px; font-weight: 600; }
 .account-role-tabs button.active { background: #fff; color: #214638; box-shadow: 0 1px 3px #193d2c15; }
@@ -422,6 +432,7 @@
 .profile-readonly-grid > div { display: grid; gap: .35rem; padding: .9rem 1rem; border: 1px solid var(--line, #e5e9e3); border-radius: .8rem; background: rgba(255,255,255,.55); }
 .profile-readonly-grid small { color: var(--muted, #78867f); }
 .profile-readonly-grid strong { color: var(--ink, #183a2e); overflow-wrap: anywhere; }
+@media (max-width: 760px) { .student-dashboard-panels { grid-template-columns: minmax(0,1fr); gap: 12px; } }
 @media (max-width: 640px) { .profile-readonly-grid { grid-template-columns: 1fr; } .student-request-row { align-items: flex-start; } }
 @media(max-width:600px){.sign-out-mobile{display:grid}.account-role-tabs{width:100%}.account-role-tabs button{flex:1}}
 

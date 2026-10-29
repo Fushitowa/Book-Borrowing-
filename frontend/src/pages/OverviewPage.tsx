@@ -155,6 +155,50 @@ function AdminDashboard({ data, loading, onGo }: { data: DashboardData | null; l
   </>;
 }
 
+function LibrarianDashboard({ data, loading, onGo }: { data: DashboardData | null; loading: boolean; onGo: (page: Page) => void }) {
+  const stats = data?.stats;
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const metrics = [
+    { label: 'Requests to review', value: stats?.pendingRequests, note: 'Waiting for your decision', glyph: '▤', tint: 'sage' },
+    { label: 'Books issued today', value: stats?.issuedToday, note: 'Checkouts recorded today', glyph: '⇧', tint: 'blue' },
+    { label: 'Returns today', value: stats?.returnedToday, note: 'Copies checked back in', glyph: '⇩', tint: 'gold' },
+    { label: 'Overdue books', value: stats?.overdueLoans, note: 'Need a follow-up', glyph: '◷', tint: 'rose' },
+  ];
+  return <>
+    <section className="admin-welcome-hero">
+      <div className="admin-hero-copy">
+        <span className="admin-hero-eyebrow">CARBONELL COLLEGE LIBRARY <i /> LIBRARIAN DESK</span>
+        <h1>Your service desk,<br />in one view.</h1>
+        <p>Keep requests, checkouts, and returns moving smoothly.</p>
+        <div className="admin-hero-actions"><button className="admin-hero-button" onClick={() => onGo('circulation')}>Issue or return a book <span>↗</span></button><span className="admin-live-label"><i /> Live library data</span></div>
+      </div>
+      <div className="admin-hero-art" aria-hidden="true"><div className="admin-hero-orbit admin-hero-orbit-one" /><div className="admin-hero-orbit admin-hero-orbit-two" /><div className="admin-hero-logo-shell"><BrandMark className="admin-dashboard-logo" /></div></div>
+      <div className="admin-today-card"><span className="admin-today-date">Today · {today}</span><div><span>Checked out</span><strong>{loading ? '—' : stats?.issuedToday ?? 0}</strong></div><div><span>Returned</span><strong>{loading ? '—' : stats?.returnedToday ?? 0}</strong></div></div>
+    </section>
+    <div className="admin-metric-strip">{metrics.map((item, index) => <article className={`admin-metric-card metric-${item.tint}`} key={item.label}><div className="admin-metric-top"><span className="admin-metric-index">0{index + 1}</span><span className="admin-metric-icon">{item.glyph}</span></div><div className="admin-metric-value">{loading ? <span className="skeleton" /> : item.value ?? 0}</div><div className="admin-metric-label">{item.label}</div><div className="admin-metric-note">{item.note}</div></article>)}</div>
+    <AdminActivityChart data={data} loading={loading} />
+    <div className="admin-insights-grid">
+      <section className="surface admin-insight-panel"><div className="section-heading"><div><h2>Service desk</h2><p>Go straight to a common library task.</p></div></div>
+        <div className="librarian-shortcut-grid">
+          <button className="librarian-shortcut" onClick={() => onGo('circulation')}><span className="quick-icon green">⇧</span><span><strong>Issue or return</strong><small>Record a checkout or check a book in.</small></span><b>↗</b></button>
+          <button className="librarian-shortcut" onClick={() => onGo('inventory')}><span className="quick-icon blue">▤</span><span><strong>Book inventory</strong><small>Find a title or review its copies.</small></span><b>↗</b></button>
+          <button className="librarian-shortcut" onClick={() => onGo('students')}><span className="quick-icon amber">♙</span><span><strong>Student records</strong><small>Look up a student and check eligibility.</small></span><b>↗</b></button>
+        </div>
+      </section>
+      <section className="surface admin-action-center"><div className="section-heading"><div><h2>Needs a review</h2><p>Requests and books that need follow-up.</p></div><span className="results-count">LIBRARY DESK</span></div>
+        <div className="admin-action-cards">
+          <button className="admin-action-card request-task" onClick={() => onGo('borrowing-requests')}><span className="admin-action-card-top"><span className="attention-icon request-icon">▤</span><b>{loading ? '—' : stats?.pendingRequests ?? 0}</b></span><span className="admin-action-card-copy"><strong>Borrowing requests</strong><small>Review requests from students.</small></span><span className="admin-action-card-link">Review queue <i>↗</i></span></button>
+          <button className="admin-action-card overdue-task" onClick={() => onGo('overdue')}><span className="admin-action-card-top"><span className="attention-icon overdue-icon">◷</span><b>{loading ? '—' : stats?.overdueLoans ?? 0}</b></span><span className="admin-action-card-copy"><strong>Overdue books</strong><small>Follow up on past-due loans.</small></span><span className="admin-action-card-link">Open overdue list <i>↗</i></span></button>
+        </div>
+        <button className="admin-directory-link" onClick={() => onGo('reservations')}><span className="admin-directory-icon">⌑</span><span><strong>Reservations</strong><small>Check the hold queue and pickup status.</small></span><b>Open queue <i>→</i></b></button>
+      </section>
+    </div>
+    <section className="surface recent-surface admin-recent-panel"><div className="section-heading"><div><h2>Recent checkouts</h2><p>Latest borrowing transactions across the library.</p></div><button className="text-button" onClick={() => onGo('loans')}>View all <span>→</span></button></div>
+      {loading ? <div className="empty-state">Loading loan activity…</div> : data?.recentLoans.length ? <div className="table-scroll"><table><thead><tr><th>BOOK &amp; BORROWER</th><th>BARCODE</th><th>CHECKED OUT</th><th>DUE DATE</th><th>STATUS</th></tr></thead><tbody>{data.recentLoans.map((loan) => <tr key={loan.id}><td><div className="book-cell"><span className="mini-cover">{loan.title.slice(0, 1)}</span><span><strong>{loan.title}</strong><small>{loan.borrower}</small></span></div></td><td className="mono">{loan.barcode}</td><td>{date(loan.checkedOutAt)}</td><td>{date(loan.dueAt)}</td><td><StatusPill label={isOverdue(loan) ? 'Overdue' : loan.status === 'ACTIVE' ? 'On loan' : loan.status.toLowerCase()} tone={isOverdue(loan) ? 'danger' : loan.status === 'ACTIVE' ? 'warning' : 'neutral'} /></td></tr>)}</tbody></table></div> : <div className="empty-state">No checkouts yet. New transactions will appear here.</div>}
+    </section>
+  </>;
+}
+
 export function Overview({ onGo, notify, isAdmin = false, isLibrarian = false }: { onGo: (page: Page) => void; notify: (notice: Notice) => void; isAdmin?: boolean; isLibrarian?: boolean }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -163,40 +207,7 @@ export function Overview({ onGo, notify, isAdmin = false, isLibrarian = false }:
     api<DashboardData>('/dashboard/stats').then(setData).catch((error) => notify({ kind: 'error', message: error.message })).finally(() => setLoading(false));
   }, [notify]);
   useEffect(reload, [reload]);
-  const stats = data?.stats;
-  const metrics = isLibrarian ? [
-    { label: 'Pending requests', value: stats?.pendingRequests, note: 'Waiting for librarian review', glyph: '▤', tint: 'sage' },
-    { label: 'Books issued today', value: stats?.issuedToday, note: 'Checkouts recorded today', glyph: '⇧', tint: 'blue' },
-    { label: 'Returns today', value: stats?.returnedToday, note: 'Copies checked back in today', glyph: '⇩', tint: 'gold' },
-    { label: 'Overdue books', value: stats?.overdueLoans, note: 'Need follow-up', glyph: '◷', tint: 'rose' },
-  ] : isAdmin ? [
-    { label: 'Total book copies', value: stats?.totalCopies, note: 'Physical copies in the collection', glyph: '▤', tint: 'sage' },
-    { label: 'Registered students', value: stats?.students, note: 'Student library accounts', glyph: '♙', tint: 'blue' },
-    { label: 'Currently borrowed', value: stats?.activeLoans, note: 'Active loans across the college', glyph: '↗', tint: 'gold' },
-    { label: 'Overdue loans', value: stats?.overdueLoans, note: 'Past their due date', glyph: '◷', tint: 'rose' },
-  ] : [
-    { label: 'Catalog titles', value: stats?.titles, note: 'Unique titles in your collection', glyph: '▤', tint: 'sage' },
-    { label: 'Copies available', value: stats?.availableCopies, note: 'Ready to be checked out', glyph: '◉', tint: 'blue' },
-    { label: 'Books on loan', value: stats?.activeLoans, note: 'Currently with readers', glyph: '↗', tint: 'gold' },
-    { label: 'Overdue returns', value: stats?.overdueLoans, note: 'Need a friendly reminder', glyph: '◷', tint: 'rose' },
-  ];
   if (isAdmin) return <AdminDashboard data={data} loading={loading} onGo={onGo} />;
-  return <>
-    <div className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}</div><h1>{isAdmin ? 'Dashboard overview' : isLibrarian ? 'Today’s library activity' : 'Good to see you.'}</h1><p>{isAdmin ? 'A live snapshot of Carbonell College Library.' : isLibrarian ? 'A live snapshot of circulation and service desk activity.' : 'Here’s what’s happening in your library today.'}</p></div><button className="outline-button" onClick={() => onGo('circulation')}><span>＋</span> New checkout</button></div>
-    <div className="stat-grid">{metrics.map((item) => <div className="stat-card" key={item.label}><div className="stat-top"><span>{item.label}</span><span className={`stat-icon ${item.tint}`}>{item.glyph}</span></div><div className="stat-value">{loading ? <span className="skeleton" /> : item.value ?? 0}</div><div className="stat-note">{item.note}</div></div>)}</div>
-    <div className="content-grid">
-      <section className="surface recent-surface"><div className="section-heading"><div><h2>{isAdmin ? 'Recent borrowing transactions' : 'Recent activity'}</h2><p>Latest checkouts across your library</p></div><button className="text-button" onClick={() => onGo('loans')}>View all <span>→</span></button></div>
-        {loading ? <div className="empty-state">Loading loan activity…</div> : data?.recentLoans.length ? <div className="table-scroll"><table><thead><tr><th>BOOK & BORROWER</th><th>BARCODE</th><th>CHECKED OUT</th><th>DUE DATE</th><th>STATUS</th></tr></thead><tbody>{data.recentLoans.map((loan) => <tr key={loan.id}><td><div className="book-cell"><span className="mini-cover">{loan.title.slice(0, 1)}</span><span><strong>{loan.title}</strong><small>{loan.borrower}</small></span></div></td><td className="mono">{loan.barcode}</td><td>{date(loan.checkedOutAt)}</td><td>{date(loan.dueAt)}</td><td><StatusPill label={isOverdue(loan) ? 'Overdue' : loan.status === 'ACTIVE' ? 'On loan' : loan.status.toLowerCase()} tone={isOverdue(loan) ? 'danger' : loan.status === 'ACTIVE' ? 'warning' : 'neutral'} /></td></tr>)}</tbody></table></div> : <div className="empty-state">No loans yet. Check out a book to see activity here.</div>}
-      </section>
-      <section className="surface quick-surface"><div className="section-heading"><div><h2>{isAdmin ? 'Administration' : 'Quick actions'}</h2><p>{isAdmin ? 'Common library management tasks' : 'Keep your library moving'}</p></div></div>
-        {isLibrarian && <button className="quick-action" onClick={() => onGo('borrowing-requests')}><span className="quick-icon green">▤</span><span><strong>Review borrowing requests</strong><small>{stats?.pendingRequests ?? 0} waiting for review</small></span><b>→</b></button>}
-        <button className="quick-action" onClick={() => onGo(isAdmin ? 'students' : isLibrarian ? 'students' : 'catalog')}><span className="quick-icon green">{isAdmin || isLibrarian ? '♙' : '▤'}</span><span><strong>{isAdmin ? 'Manage users' : isLibrarian ? 'Student records' : 'Browse catalog'}</strong><small>{isAdmin ? 'Review student accounts' : isLibrarian ? 'Check borrowing eligibility' : 'Explore the collection'}</small></span><b>→</b></button>
-        <button className="quick-action" onClick={() => onGo(isLibrarian ? 'inventory' : 'catalog')}><span className="quick-icon blue">▤</span><span><strong>{isAdmin ? 'Manage books' : isLibrarian ? 'Book inventory' : 'Browse books'}</strong><small>{isAdmin ? 'Titles, categories, and copies' : isLibrarian ? 'Review copy conditions and locations' : 'Find your next read'}</small></span><b>→</b></button>
-        <button className="quick-action" onClick={() => onGo('reservations')}><span className="quick-icon amber">⌑</span><span><strong>Reservations</strong><small>Review holds and pickup status</small></span><b>→</b></button>
-        {isAdmin && <button className="quick-action" onClick={() => onGo('settings')}><span className="quick-icon rose">⚙</span><span><strong>System settings</strong><small>Update student borrowing policy</small></span><b>→</b></button>}
-        {isLibrarian && <button className="quick-action" onClick={() => onGo('overdue')}><span className="quick-icon amber">◷</span><span><strong>Overdue monitoring</strong><small>{stats?.overdueLoans ?? 0} overdue loans</small></span><b>→</b></button>}
-        <div className="collection-note"><span>✳</span><p><strong>{stats?.students ?? 0} readers</strong> are part of your college library.</p></div>
-      </section>
-    </div>
-  </>;
+  if (isLibrarian) return <LibrarianDashboard data={data} loading={loading} onGo={onGo} />;
+  return null;
 }
