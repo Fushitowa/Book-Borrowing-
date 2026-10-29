@@ -103,11 +103,11 @@ function AdminDashboard({ data, loading, onGo }: { data: DashboardData | null; l
         <div className="admin-hero-orbit admin-hero-orbit-one" />
         <div className="admin-hero-orbit admin-hero-orbit-two" />
         <div className="admin-hero-logo-shell"><BrandMark className="admin-dashboard-logo" /></div>
-        <div className="admin-today-card">
-          <span className="admin-today-date">{today}</span>
-          <div><span>Checked out</span><strong>{loading ? '—' : stats?.issuedToday ?? 0}</strong></div>
-          <div><span>Returned</span><strong>{loading ? '—' : stats?.returnedToday ?? 0}</strong></div>
-        </div>
+      </div>
+      <div className="admin-today-card">
+        <span className="admin-today-date">Today · {today}</span>
+        <div><span>Checked out</span><strong>{loading ? '—' : stats?.issuedToday ?? 0}</strong></div>
+        <div><span>Returned</span><strong>{loading ? '—' : stats?.returnedToday ?? 0}</strong></div>
       </div>
     </section>
     <div className="admin-metric-strip">
