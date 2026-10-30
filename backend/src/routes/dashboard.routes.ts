@@ -17,7 +17,7 @@ dashboardRouter.get('/student', requireRoles('STUDENT'), async (request, respons
     const [recentLoans] = await databasePool.execute<any[]>(
       `SELECT l.id, l.status, l.checked_out_at AS checkedOutAt, l.due_at AS dueAt,
           l.returned_at AS returnedAt, l.return_condition AS returnCondition,
-          b.title, bc.barcode, u.id AS borrowerId,
+          b.title, b.cover_image_url AS coverImageUrl, bc.barcode, u.id AS borrowerId,
           CASE WHEN l.status = 'ACTIVE' AND l.due_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END AS isOverdue
          FROM loans l JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
          JOIN users u ON u.id = l.borrower_user_id
@@ -37,7 +37,7 @@ dashboardRouter.get('/stats', requireRoles('ADMIN', 'LIBRARIAN'), async (_reques
       databasePool.query<any[]>("SELECT COUNT(DISTINCT ur.user_id) AS total FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE r.code = 'STUDENT'"),
       databasePool.query<any[]>(`SELECT l.id, l.checked_out_at AS checkedOutAt, l.due_at AS dueAt,
           CONCAT(u.first_name, ' ', u.last_name) AS borrower,
-          b.title, bc.barcode, l.status
+          b.title, b.cover_image_url AS coverImageUrl, bc.barcode, l.status
         FROM loans l JOIN users u ON u.id = l.borrower_user_id
         JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
         ORDER BY l.checked_out_at DESC LIMIT 8`),

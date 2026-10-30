@@ -7,6 +7,7 @@ import type { Page, Notice } from '../types/app';
 import type { DashboardData } from '../types';
 
 function AdminActivityChart({ data, loading }: { data: DashboardData | null; loading: boolean }) {
+  const [hoveredDay, setHoveredDay] = useState<number | null>(null);
   const days = Array.from({ length: 7 }, (_, index) => {
     const day = new Date();
     day.setUTCHours(0, 0, 0, 0);
@@ -20,59 +21,185 @@ function AdminActivityChart({ data, loading }: { data: DashboardData | null; loa
     returned: Number(activityByDay.get(day)?.returned ?? 0),
   }));
   const maxValue = Math.max(4, ...activity.flatMap((entry) => [entry.issued, entry.returned]));
-  const left = 48;
-  const right = 738;
-  const top = 24;
-  const bottom = 204;
-  const point = (value: number, index: number) => ({
-    x: left + (right - left) * index / (activity.length - 1),
-    y: bottom - value / maxValue * (bottom - top),
-  });
-  const linePath = (key: 'issued' | 'returned') => activity.map((entry, index) => {
-    const position = point(entry[key], index);
-    return `${index === 0 ? 'M' : 'L'} ${position.x} ${position.y}`;
-  }).join(' ');
-  const issuedPath = linePath('issued');
-  const issuedPoints = activity.map((entry, index) => point(entry.issued, index));
-  const areaPath = `${issuedPath} L ${right} ${bottom} L ${left} ${bottom} Z`;
   const issuedTotal = activity.reduce((total, entry) => total + entry.issued, 0);
   const returnedTotal = activity.reduce((total, entry) => total + entry.returned, 0);
   const hasActivity = issuedTotal > 0 || returnedTotal > 0;
+  const netChange = issuedTotal - returnedTotal;
   const labelForDay = (value: string) => {
     const [year, month, day] = value.split('-').map(Number);
     return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'short' });
   };
+  const dateForDay = (value: string) => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
-  return <section className="surface admin-trend-panel">
-    <div className="section-heading">
-      <div><h2>Borrowing activity</h2><p>Books checked out and returned over the last seven days.</p></div>
-      <span className="results-count">LAST 7 DAYS</span>
+  /* SVG chart geometry */
+  const left = 48, right = 738, top = 28, bottom = 204;
+  const point = (value: number, index: number) => ({
+    x: left + (right - left) * index / (activity.length - 1),
+    y: bottom - value / maxValue * (bottom - top),
+  });
+  /* Smooth curve path using cubic Bézier */
+  const smoothPath = (key: 'issued' | 'returned') => {
+    const pts = activity.map((entry, index) => point(entry[key], index));
+    if (pts.length < 2) return '';
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const tension = 0.3;
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const cp1x = p1.x + (p2.x - p0.x) * tension;
+      const cp1y = p1.y + (p2.y - p0.y) * tension;
+      const cp2x = p2.x - (p3.x - p1.x) * tension;
+      const cp2y = p2.y - (p3.y - p1.y) * tension;
+      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    return d;
+  };
+  const issuedPath = smoothPath('issued');
+  const returnedPath = smoothPath('returned');
+  const issuedPoints = activity.map((entry, index) => point(entry.issued, index));
+  const lastIssuedPt = issuedPoints[issuedPoints.length - 1];
+  const firstIssuedPt = issuedPoints[0];
+  const areaPath = `${issuedPath} L ${lastIssuedPt.x} ${bottom} L ${firstIssuedPt.x} ${bottom} Z`;
+  /* Peak day */
+  const peakIdx = activity.reduce((best, entry, i, arr) => (entry.issued + entry.returned) > (arr[best].issued + arr[best].returned) ? i : best, 0);
+  const peakTotal = activity[peakIdx].issued + activity[peakIdx].returned;
+
+  return <section className="surface ac-panel">
+    {/* ---- Header row ---- */}
+    <div className="ac-header">
+      <div className="ac-header-left">
+        <span className="ac-kicker">WEEKLY CIRCULATION TREND</span>
+        <h2 className="ac-title">Borrowing activity</h2>
+        <p className="ac-subtitle">Books checked out and returned over the last seven days.</p>
+      </div>
+      <div className="ac-header-right">
+        <span className="ac-period-pill">Last 7 days</span>
+      </div>
     </div>
-    <div className="admin-chart-legend">
-      <span><i className="legend-issued" /> Books checked out <strong>{loading ? '—' : issuedTotal}</strong></span>
-      <span><i className="legend-returned" /> Books returned <strong>{loading ? '—' : returnedTotal}</strong></span>
+
+    {/* ---- Summary strip ---- */}
+    <div className="ac-summary-strip">
+      <div className="ac-summary-card ac-summary-issued">
+        <span className="ac-summary-dot ac-dot-issued" />
+        <div className="ac-summary-copy">
+          <span className="ac-summary-label">Checked out</span>
+          <strong className="ac-summary-value">{loading ? '—' : issuedTotal}</strong>
+        </div>
+      </div>
+      <div className="ac-summary-card ac-summary-returned">
+        <span className="ac-summary-dot ac-dot-returned" />
+        <div className="ac-summary-copy">
+          <span className="ac-summary-label">Returned</span>
+          <strong className="ac-summary-value">{loading ? '—' : returnedTotal}</strong>
+        </div>
+      </div>
+      <div className="ac-summary-card ac-summary-net">
+        <span className={`ac-summary-dot ${netChange > 0 ? 'ac-dot-issued' : netChange < 0 ? 'ac-dot-returned' : 'ac-dot-neutral'}`} />
+        <div className="ac-summary-copy">
+          <span className="ac-summary-label">Net change</span>
+          <strong className="ac-summary-value">{loading ? '—' : `${netChange >= 0 ? '+' : ''}${netChange}`}</strong>
+        </div>
+      </div>
+      {hasActivity && <div className="ac-summary-card ac-summary-peak">
+        <span className="ac-summary-dot ac-dot-peak" />
+        <div className="ac-summary-copy">
+          <span className="ac-summary-label">Peak day</span>
+          <strong className="ac-summary-value">{dateForDay(activity[peakIdx].day)} · {peakTotal}</strong>
+        </div>
+      </div>}
     </div>
-    {!loading && !hasActivity && <p className="admin-chart-empty">No checkouts or returns were recorded in the last seven days.</p>}
-    <div className="admin-chart-wrap" aria-busy={loading}>
-      <svg className="admin-activity-chart" viewBox="0 0 760 258" preserveAspectRatio="none" role="img" aria-label="Daily books checked out and returned over the last seven days">
-        <defs><linearGradient id="issued-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#719b7f" stopOpacity=".3" /><stop offset="100%" stopColor="#719b7f" stopOpacity=".025" /></linearGradient></defs>
-        {[0, 1, 2, 3].map((line) => {
-          const y = top + (bottom - top) * line / 3;
-          const value = Math.round(maxValue * (3 - line) / 3);
-          return <g key={line}><line x1={left} x2={right} y1={y} y2={y} className="chart-grid-line" /><text x="36" y={y + 4} textAnchor="end" className="chart-axis-label">{value}</text></g>;
-        })}
-        <path d={areaPath} fill="url(#issued-area)" />
-        <path d={issuedPath} className="chart-issued-line" />
-        <path d={linePath('returned')} className="chart-returned-line" />
-        {activity.map((entry, index) => {
-          const position = point(entry.issued, index);
-          const returnedPosition = point(entry.returned, index);
-          return <g key={entry.day}>
-            <circle cx={position.x} cy={position.y} r="4" className="chart-issued-point" />
-            <circle cx={returnedPosition.x} cy={returnedPosition.y} r="3.5" className="chart-returned-point" />
-            <text x={issuedPoints[index].x} y="232" textAnchor="middle" className="chart-day-label">{labelForDay(entry.day)}</text>
+
+    {/* ---- Chart ---- */}
+    {!loading && !hasActivity && <p className="ac-empty">No checkouts or returns were recorded in the last seven days.</p>}
+    <div className="ac-chart-wrap" aria-busy={loading}>
+      <svg className="ac-chart" viewBox="0 0 760 258" preserveAspectRatio="none" role="img" aria-label="Daily books checked out and returned over the last seven days">
+        <defs>
+          <linearGradient id="ac-grad-issued" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4a8f5f" stopOpacity=".22" />
+            <stop offset="100%" stopColor="#4a8f5f" stopOpacity=".01" />
+          </linearGradient>
+          <linearGradient id="ac-grad-returned" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#c1a15f" stopOpacity=".13" />
+            <stop offset="100%" stopColor="#c1a15f" stopOpacity=".01" />
+          </linearGradient>
+          <filter id="ac-glow-issued"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+          <filter id="ac-glow-returned"><feGaussianBlur stdDeviation="2.5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+        </defs>
+
+        {/* Grid lines */}
+        {[0, 1, 2, 3, 4].map((line) => {
+          const y = top + (bottom - top) * line / 4;
+          const value = Math.round(maxValue * (4 - line) / 4);
+          return <g key={line}>
+            <line x1={left} x2={right} y1={y} y2={y} className="ac-grid-line" />
+            <text x="38" y={y + 4} textAnchor="end" className="ac-axis-label">{value}</text>
           </g>;
         })}
+
+        {/* Hover columns */}
+        {activity.map((entry, index) => {
+          const px = point(0, index).x;
+          const colWidth = (right - left) / (activity.length - 1);
+          return <rect key={entry.day + '-hover'}
+            x={px - colWidth / 2} y={top} width={colWidth} height={bottom - top}
+            fill={hoveredDay === index ? '#3970501a' : 'transparent'}
+            onMouseEnter={() => setHoveredDay(index)}
+            onMouseLeave={() => setHoveredDay(null)}
+            style={{ cursor: 'default' }}
+          />;
+        })}
+
+        {/* Hover vertical line */}
+        {hoveredDay !== null && <line x1={point(0, hoveredDay).x} x2={point(0, hoveredDay).x} y1={top} y2={bottom} stroke="#39705033" strokeWidth="1" strokeDasharray="4 3" />}
+
+        {/* Area fills */}
+        <path d={areaPath} fill="url(#ac-grad-issued)" />
+
+        {/* Lines */}
+        <path d={issuedPath} className="ac-line-issued" filter="url(#ac-glow-issued)" />
+        <path d={returnedPath} className="ac-line-returned" filter="url(#ac-glow-returned)" />
+
+        {/* Data points & day labels */}
+        {activity.map((entry, index) => {
+          const ip = point(entry.issued, index);
+          const rp = point(entry.returned, index);
+          const isHovered = hoveredDay === index;
+          return <g key={entry.day}>
+            {/* Issued point */}
+            <circle cx={ip.x} cy={ip.y} r={isHovered ? 6 : 4.5} className="ac-point-issued" />
+            <circle cx={ip.x} cy={ip.y} r="2" fill="#fff" />
+            {/* Returned point */}
+            <circle cx={rp.x} cy={rp.y} r={isHovered ? 5.5 : 4} className="ac-point-returned" />
+            <circle cx={rp.x} cy={rp.y} r="1.8" fill="#fff" />
+            {/* Day label */}
+            <text x={ip.x} y="232" textAnchor="middle" className={`ac-day-label ${isHovered ? 'ac-day-active' : ''}`}>{labelForDay(entry.day)}</text>
+            {/* Date below day */}
+            <text x={ip.x} y="248" textAnchor="middle" className="ac-date-label">{dateForDay(entry.day)}</text>
+          </g>;
+        })}
+
+        {/* Hover tooltip */}
+        {hoveredDay !== null && (() => {
+          const entry = activity[hoveredDay];
+          const px = point(0, hoveredDay).x;
+          const tooltipW = 105;
+          const tooltipH = 48;
+          let tx = px - tooltipW / 2;
+          if (tx < left) tx = left;
+          if (tx + tooltipW > right) tx = right - tooltipW;
+          const ty = top - 6;
+          return <g>
+            <rect x={tx} y={ty - tooltipH} width={tooltipW} height={tooltipH} rx="6" fill="#1f3c30" opacity=".95" />
+            <text x={tx + tooltipW / 2} y={ty - tooltipH + 17} textAnchor="middle" fill="#e0d9a8" style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '.06em' }}>{dateForDay(entry.day)}</text>
+            <text x={tx + 14} y={ty - tooltipH + 34} fill="#9dd4aa" style={{ fontSize: '10px', fontWeight: 600 }}>↑ {entry.issued}</text>
+            <text x={tx + tooltipW / 2 + 10} y={ty - tooltipH + 34} fill="#e0c67a" style={{ fontSize: '10px', fontWeight: 600 }}>↓ {entry.returned}</text>
+          </g>;
+        })()}
       </svg>
     </div>
   </section>;

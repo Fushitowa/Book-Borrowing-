@@ -34,6 +34,7 @@ export interface Loan {
   returnedAt: string | null;
   returnCondition: 'GOOD' | 'DAMAGED' | null;
   title: string;
+  coverImageUrl: string | null;
   barcode: string;
   borrower: string;
   borrowerEmail?: string | null;
