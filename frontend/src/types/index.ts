@@ -39,6 +39,8 @@ export interface Loan {
   borrower: string;
   borrowerEmail?: string | null;
   borrowerId: number;
+  returnRequestedAt: string | null;
+  returnRequestedNote: string | null;
   isOverdue: boolean | number;
 }
 

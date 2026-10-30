@@ -25,7 +25,8 @@ loansRouter.get('/', requireAuth, async (request, response, next) => {
       `SELECT l.id, l.status, l.checked_out_at AS checkedOutAt, l.due_at AS dueAt,
           l.returned_at AS returnedAt, l.return_condition AS returnCondition,
           b.title, b.cover_image_url AS coverImageUrl, bc.barcode, CONCAT(u.first_name, ' ', u.last_name) AS borrower, u.email AS borrowerEmail,
-          u.id AS borrowerId, CASE WHEN l.status = 'ACTIVE' AND l.due_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END AS isOverdue
+          u.id AS borrowerId, l.return_requested_at AS returnRequestedAt, l.return_requested_note AS returnRequestedNote,
+           CASE WHEN l.status = 'ACTIVE' AND l.due_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END AS isOverdue
         FROM loans l JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
         JOIN users u ON u.id = l.borrower_user_id
         WHERE ${statusClause}${studentOnly ? ' AND l.borrower_user_id = ?' : ''}
@@ -160,6 +161,67 @@ loansRouter.post('/:loanId/renew', requireAuth, async (request, response, next) 
     await writeAudit(connection, auth.id, 'LOAN_RENEWED', 'loans', loanId, { renewalNumber });
     await connection.commit();
     response.json({ message: 'Loan renewed.', dueAt: dueRows[0].dueAt });
+  } catch (error) { await connection.rollback(); next(error); }
+  finally { connection.release(); }
+});
+
+/* ---- Student-initiated return request ---- */
+loansRouter.post('/:loanId/request-return', requireAuth, async (request, response, next) => {
+  const loanId = Number(request.params.loanId);
+  if (!Number.isSafeInteger(loanId) || loanId < 1) { response.status(400).json({ error: 'Invalid loan.' }); return; }
+  const note = typeof request.body?.note === 'string' ? request.body.note.trim().slice(0, 500) : null;
+  const auth = (request as AuthenticatedRequest).auth;
+  const connection = await databasePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<any[]>(
+      `SELECT l.id, l.borrower_user_id AS borrowerId, l.return_requested_at AS returnRequestedAt, b.title
+         FROM loans l JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
+        WHERE l.id = ? AND l.status = 'ACTIVE' FOR UPDATE`, [loanId]);
+    if (!rows.length) { await connection.rollback(); response.status(404).json({ error: 'Active loan not found.' }); return; }
+    if (Number(rows[0].borrowerId) !== auth.id) { await connection.rollback(); response.status(403).json({ error: 'You can only request returns for your own loans.' }); return; }
+    if (rows[0].returnRequestedAt) { await connection.rollback(); response.status(409).json({ error: 'You have already requested a return for this book.' }); return; }
+    await connection.execute(
+      'UPDATE loans SET return_requested_at = UTC_TIMESTAMP(), return_requested_note = ? WHERE id = ?',
+      [note || null, loanId]);
+    /* Notify all staff about the incoming return */
+    const [staffRows] = await connection.execute<any[]>(
+      `SELECT DISTINCT u.id FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+        WHERE r.code IN ('ADMIN','LIBRARIAN') AND u.account_status = 'ACTIVE'`);
+    for (const staff of staffRows) {
+      await createNotification(connection, Number(staff.id), 'RETURN_REQUESTED',
+        'Student return request',
+        `${auth.firstName} ${auth.lastName} wants to return "${rows[0].title}".${note ? ' Note: ' + note : ''}`);
+    }
+    await writeAudit(connection, auth.id, 'RETURN_REQUESTED', 'loans', loanId, { note: note || null });
+    await connection.commit();
+    response.json({ message: `Return requested for "${rows[0].title}". Please bring the book to the library desk.` });
+  } catch (error) { await connection.rollback(); next(error); }
+  finally { connection.release(); }
+});
+
+/* ---- Student cancels their return request ---- */
+loansRouter.post('/:loanId/cancel-return', requireAuth, async (request, response, next) => {
+  const loanId = Number(request.params.loanId);
+  if (!Number.isSafeInteger(loanId) || loanId < 1) { response.status(400).json({ error: 'Invalid loan.' }); return; }
+  const auth = (request as AuthenticatedRequest).auth;
+  const connection = await databasePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<any[]>(
+      `SELECT l.id, l.borrower_user_id AS borrowerId, l.return_requested_at AS returnRequestedAt, b.title
+         FROM loans l JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
+        WHERE l.id = ? AND l.status = 'ACTIVE' FOR UPDATE`, [loanId]);
+    if (!rows.length) { await connection.rollback(); response.status(404).json({ error: 'Active loan not found.' }); return; }
+    if (Number(rows[0].borrowerId) !== auth.id) { await connection.rollback(); response.status(403).json({ error: 'You can only manage your own loans.' }); return; }
+    if (!rows[0].returnRequestedAt) { await connection.rollback(); response.status(409).json({ error: 'No return request to cancel.' }); return; }
+    await connection.execute(
+      'UPDATE loans SET return_requested_at = NULL, return_requested_note = NULL WHERE id = ?', [loanId]);
+    await writeAudit(connection, auth.id, 'RETURN_REQUEST_CANCELLED', 'loans', loanId, {});
+    await connection.commit();
+    response.json({ message: `Return request cancelled for "${rows[0].title}".` });
   } catch (error) { await connection.rollback(); next(error); }
   finally { connection.release(); }
 });
