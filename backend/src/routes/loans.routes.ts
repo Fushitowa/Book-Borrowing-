@@ -94,18 +94,22 @@ loansRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), async (request, respon
   finally { connection.release(); }
 });
 
-loansRouter.post('/:loanId/return', requireRoles('ADMIN', 'LIBRARIAN'), async (request, response, next) => {
+loansRouter.post('/:loanId/return', requireAuth, async (request, response, next) => {
   const loanId = Number(request.params.loanId);
   const condition = request.body?.condition === 'DAMAGED' ? 'DAMAGED' : request.body?.condition === 'GOOD' ? 'GOOD' : null;
   const notes = typeof request.body?.notes === 'string' ? request.body.notes.trim().slice(0, 1000) : null;
   if (!Number.isSafeInteger(loanId) || loanId < 1 || !condition) { response.status(400).json({ error: 'Choose a valid loan and return condition.' }); return; }
   const auth = (request as AuthenticatedRequest).auth;
+  const staff = auth.roles.includes('ADMIN') || auth.roles.includes('LIBRARIAN');
   const connection = await databasePool.getConnection();
   try {
     await connection.beginTransaction();
-    const [loanRows] = await connection.execute<any[]>("SELECT id, copy_id AS copyId, status FROM loans WHERE id = ? FOR UPDATE", [loanId]);
+    const [loanRows] = await connection.execute<any[]>(
+      `SELECT l.id, l.copy_id AS copyId, l.status, l.borrower_user_id AS borrowerId
+         FROM loans l WHERE l.id = ? FOR UPDATE`, [loanId]);
     if (!loanRows.length) { await connection.rollback(); response.status(404).json({ error: 'Loan not found.' }); return; }
     if (loanRows[0].status !== 'ACTIVE') { await connection.rollback(); response.status(409).json({ error: 'This loan has already been closed.' }); return; }
+    if (!staff && Number(loanRows[0].borrowerId) !== auth.id) { await connection.rollback(); response.status(403).json({ error: 'You can only return your own loans.' }); return; }
     await connection.execute(
       `UPDATE loans SET status = 'RETURNED', returned_at = UTC_TIMESTAMP(), returned_by_user_id = ?,
          return_condition = ?, return_notes = ? WHERE id = ?`, [auth.id, condition, notes || null, loanId]);
@@ -113,9 +117,10 @@ loansRouter.post('/:loanId/return', requireRoles('ADMIN', 'LIBRARIAN'), async (r
     const [borrowerRows] = await connection.execute<any[]>(
       `SELECT l.borrower_user_id AS borrowerId, b.title, bc.book_id AS bookId FROM loans l
         JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id WHERE l.id = ?`, [loanId]);
+    const bookId = Number(borrowerRows[0].bookId);
     await createNotification(connection, Number(borrowerRows[0].borrowerId), 'LOAN_RETURNED', 'Book return recorded', `The return of “${borrowerRows[0].title}” has been recorded.`);
-    if (condition === 'GOOD') await assignNextReservation(connection, Number(borrowerRows[0].bookId), Number(loanRows[0].copyId));
-    await writeAudit(connection, auth.id, 'LOAN_RETURNED', 'loans', loanId, { condition, notes: notes || null });
+    if (condition === 'GOOD') await assignNextReservation(connection, bookId, Number(loanRows[0].copyId));
+    await writeAudit(connection, auth.id, 'LOAN_RETURNED', 'loans', loanId, { condition, notes: notes || null, returnedBy: auth.id });
     await connection.commit();
     response.json({ message: condition === 'DAMAGED' ? 'Return recorded; copy marked damaged.' : 'Return recorded successfully.' });
   } catch (error) { await connection.rollback(); next(error); }

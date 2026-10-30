@@ -1,84 +1,16 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { StatusPill } from '../components/LibraryUI';
 import { date, isOverdue, isStaff } from '../utils/format';
 import type { Notice } from '../types/app';
 import type { Loan, User } from '../types';
 
-/* ------------------------------------------------------------------ */
-/*  Return Request Modal (student-facing)                              */
-/* ------------------------------------------------------------------ */
-function ReturnRequestModal({ loan, busy, onConfirm, onCancel }: { loan: Loan; busy: boolean; onConfirm: (note: string) => void; onCancel: () => void }) {
-  const [note, setNote] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  const dueDate = new Date(loan.dueAt);
-  const now = new Date();
-  const daysRemaining = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div className="modal-card rr-modal" role="dialog" aria-modal="true" aria-labelledby="rr-title">
-        <div className="rr-modal-header">
-          <div className="rr-modal-icon"><span>⇩</span></div>
-          <div>
-            <h2 id="rr-title">Return this book</h2>
-            <p>You're requesting to return <strong>"{loan.title}"</strong>.</p>
-          </div>
-        </div>
-
-        <div className="rr-modal-book-card">
-          <div className="rr-book-detail">
-            <span className="rr-detail-label">Book</span>
-            <strong>{loan.title}</strong>
-          </div>
-          <div className="rr-book-detail">
-            <span className="rr-detail-label">Barcode</span>
-            <span className="mono">{loan.barcode}</span>
-          </div>
-          <div className="rr-book-detail">
-            <span className="rr-detail-label">Checked out</span>
-            <span>{date(loan.checkedOutAt)}</span>
-          </div>
-          <div className="rr-book-detail">
-            <span className="rr-detail-label">Due date</span>
-            <span>{date(loan.dueAt)}{daysRemaining > 0 && <small className="rr-days-badge"> {daysRemaining} day{daysRemaining === 1 ? '' : 's'} left</small>}</span>
-          </div>
-        </div>
-
-        <div className="rr-modal-body">
-          <label className="rr-label">Note for the librarian <small className="rr-optional">(optional)</small></label>
-          <textarea ref={inputRef} className="rr-textarea" rows={2} placeholder="e.g. I'll drop it off at the front desk this afternoon…" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-        </div>
-
-        <div className="rr-modal-info">
-          <span className="rr-info-icon">ℹ</span>
-          <p>The librarian will be notified about your return request. <strong>Please bring the book to the library desk</strong> so they can inspect and confirm the return.</p>
-        </div>
-
-        <div className="rr-modal-actions">
-          <button className="outline-button" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button className="primary-button rr-confirm-btn" disabled={busy} onClick={() => onConfirm(note.trim())}>
-            {busy ? <><span className="spinner" /> Submitting…</> : <><span>⇩</span> Request return</>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Loans Page                                                         */
-/* ------------------------------------------------------------------ */
 export function Loans({ user, notify, initialFilter = 'ACTIVE', studentHistory = false }: { user: User; notify: (notice: Notice) => void; initialFilter?: string; studentHistory?: boolean }) {
   const [items, setItems] = useState<Loan[]>([]);
   const [filter, setFilter] = useState(initialFilter);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
-  const [busy, setBusy] = useState<number | null>(null);
-  const visibleItems = items.filter((loan) => `${loan.title} ${loan.barcode} ${loan.borrower}`.toLowerCase().includes(query.toLowerCase()));
+  const visibleItems = items.filter((loan: Loan) => `${loan.title} ${loan.barcode} ${loan.borrower}`.toLowerCase().includes(query.toLowerCase()));
   const staff = isStaff(user);
 
   const reload = useCallback(() => {
@@ -108,30 +40,6 @@ export function Loans({ user, notify, initialFilter = 'ACTIVE', studentHistory =
   const recover = async (loan: Loan, condition: 'GOOD' | 'DAMAGED') => {
     try { await api(`/loans/${loan.id}/recover`, { method: 'POST', body: JSON.stringify({ condition }) }); notify({ kind: 'success', message: condition === 'GOOD' ? 'Book recovery recorded and copy returned to service.' : 'Book recovery recorded; copy is marked damaged.' }); reload(); }
     catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not record recovery.' }); }
-  };
-
-  /* Student return request */
-  const requestReturn = async (loan: Loan, note: string) => {
-    setBusy(loan.id);
-    try {
-      const result = await api<{ message: string }>(`/loans/${loan.id}/request-return`, { method: 'POST', body: JSON.stringify({ note: note || null }) });
-      notify({ kind: 'success', message: result.message });
-      setReturningLoan(null);
-      reload();
-    } catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not submit return request.' }); }
-    finally { setBusy(null); }
-  };
-
-  /* Student cancel return request */
-  const cancelReturn = async (loan: Loan) => {
-    if (!window.confirm(`Cancel your return request for "${loan.title}"?`)) return;
-    setBusy(loan.id);
-    try {
-      const result = await api<{ message: string }>(`/loans/${loan.id}/cancel-return`, { method: 'POST' });
-      notify({ kind: 'success', message: result.message });
-      reload();
-    } catch (error) { notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not cancel return request.' }); }
-    finally { setBusy(null); }
   };
 
   const isStudent = user.roles.includes('STUDENT') && !staff;
@@ -210,7 +118,7 @@ export function Loans({ user, notify, initialFilter = 'ACTIVE', studentHistory =
                       <button className="small-outline" onClick={() => recover(loan, 'DAMAGED')}>Recovered · damaged</button>
                     </> : <>
                       {/* Renew (both staff and students) */}
-                      {(loan.status === 'ACTIVE' || isOverdue(loan)) && !hasReturnRequest && <button className="small-outline" disabled={busy === loan.id} onClick={() => renewLoan(loan)}>Renew</button>}
+                      {(loan.status === 'ACTIVE' || isOverdue(loan)) && !hasReturnRequest && <button className="small-outline" onClick={() => renewLoan(loan)}>Renew</button>}
 
                       {/* Staff actions */}
                       {staff && <>
@@ -221,18 +129,10 @@ export function Loans({ user, notify, initialFilter = 'ACTIVE', studentHistory =
 
                       {/* Student actions */}
                       {isStudent && loan.status === 'ACTIVE' && !studentHistory && <>
-                        {hasReturnRequest ? (
-                          <div className="rr-student-status">
-                            <span className="rr-pending-label">✓ Return requested</span>
-                            <button className="rr-cancel-btn" disabled={busy === loan.id} onClick={() => cancelReturn(loan)}>
-                              {busy === loan.id ? 'Cancelling…' : 'Cancel'}
-                            </button>
-                          </div>
-                        ) : (
-                          <button className="rr-return-btn" disabled={busy === loan.id} onClick={() => setReturningLoan(loan)}>
-                            <span className="rr-btn-icon">⇩</span> Return book
-                          </button>
-                        )}
+                        <button className="rr-return-btn" onClick={() => returnLoan(loan, 'GOOD')}>
+                          <span className="rr-btn-icon">⇩</span> Return book
+                        </button>
+                        <button className="small-outline request-decline" onClick={() => returnLoan(loan, 'DAMAGED')}>Return · damaged</button>
                       </>}
                     </>}
                   </div>
@@ -247,13 +147,5 @@ export function Loans({ user, notify, initialFilter = 'ACTIVE', studentHistory =
         <span>There are no loans in this view.</span>
       </div>}
     </section>
-
-    {/* Return request modal */}
-    {returningLoan && <ReturnRequestModal
-      loan={returningLoan}
-      busy={busy === returningLoan.id}
-      onConfirm={(note) => requestReturn(returningLoan, note)}
-      onCancel={() => setReturningLoan(null)}
-    />}
   </>;
 }
