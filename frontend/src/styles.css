@@ -546,6 +546,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   .login-bottom{gap:8px;flex-wrap:wrap;font-size:10px}
 }
 
+/* Login account-type selector, matching the staff sign-in flow. */
+.login-role-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:-13px 0 22px;padding:4px;border:1px solid #e2e9e3;border-radius:9px;background:#f4f7f3}
+.login-role-switch button{min-height:34px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:#748278;font-size:10px;font-weight:600;transition:background .15s,color .15s,box-shadow .15s}
+.login-role-switch button:hover{color:#315a43}
+.login-role-switch button.selected{border-color:#dce7dc;background:#fff;color:#214638;box-shadow:0 1px 3px #203b2a12}
+.login-role-switch button:focus-visible{outline:2px solid #6b9477;outline-offset:2px}
+
 @media(max-width:380px){
   .page-content{padding-right:12px;padding-left:12px}
   .topbar{padding-right:12px;padding-left:12px}

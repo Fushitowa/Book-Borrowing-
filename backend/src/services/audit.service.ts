@@ -1,7 +1,7 @@
-import type { PoolConnection } from 'mysql2/promise';
+import type { DatabaseConnection } from '../config/database.js';
 
 export async function writeAudit(
-  connection: PoolConnection,
+  connection: DatabaseConnection,
   actorId: number | null,
   action: string,
   entityType: string,

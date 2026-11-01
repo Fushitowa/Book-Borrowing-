@@ -4,6 +4,8 @@ import { BrandMark } from '../components/BrandMark';
 import { api } from '../services/api';
 import type { User } from '../types';
 
+type LoginRole = 'ADMIN' | 'LIBRARIAN' | 'STUDENT';
+
 interface LoginProps {
   onLogin: (user: User) => void;
   onCreateAccount: () => void;
@@ -13,6 +15,7 @@ export function Login({ onLogin, onCreateAccount }: LoginProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loginRole, setLoginRole] = useState<LoginRole>('ADMIN');
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -25,7 +28,7 @@ export function Login({ onLogin, onCreateAccount }: LoginProps) {
     try {
       const result = await api<{ user: User }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ identifier, password, rememberMe }),
+        body: JSON.stringify({ identifier, password, rememberMe, expectedRole: loginRole }),
       });
       onLogin(result.user);
     } catch (reason) {
@@ -42,8 +45,15 @@ export function Login({ onLogin, onCreateAccount }: LoginProps) {
         <div className="login-side-top"><BrandMark /><span>Carbonell <b>Library</b></span></div>
         <div className="login-form-wrap">
           <div className="eyebrow">YOUR LIBRARY, IN ONE PLACE</div>
-          <h1>Welcome back</h1>
-          <p className="login-subtitle">Sign in to continue to your college library.</p>
+          <h1>{loginRole === 'STUDENT' ? 'Student sign in' : `${loginRole === 'ADMIN' ? 'Admin' : 'Librarian'} sign in`}</h1>
+          <p className="login-subtitle">Sign in with your {loginRole === 'STUDENT' ? 'student' : loginRole === 'ADMIN' ? 'administrator' : 'librarian'} account.</p>
+          <div className="login-role-switch" role="group" aria-label="Choose account type">
+            {(['ADMIN', 'LIBRARIAN', 'STUDENT'] as const).map((role) => (
+              <button key={role} type="button" className={loginRole === role ? 'selected' : ''} aria-pressed={loginRole === role} onClick={() => { setLoginRole(role); setError(''); }}>
+                {role === 'ADMIN' ? 'Admin' : role === 'LIBRARIAN' ? 'Librarian' : 'Student'}
+              </button>
+            ))}
+          </div>
           <form onSubmit={submit} className="login-form">
             <label htmlFor="identifier">Username or email</label>
             <input autoComplete="username" id="identifier" name="identifier" placeholder="e.g. j.santos" required />
@@ -54,10 +64,10 @@ export function Login({ onLogin, onCreateAccount }: LoginProps) {
             </div>
             <label className="remember-option"><input name="rememberMe" type="checkbox" /><span>Remember me</span><small>Keep me signed in on this device</small></label>
             {error && <div className="form-error" role="alert">{error}</div>}
-            <button className="primary-button login-submit" disabled={busy}>{busy ? <><span className="spinner" /> Signing in…</> : <>Sign in <span>→</span></>}</button>
+            <button className="primary-button login-submit" disabled={busy}>{busy ? <><span className="spinner" /> Signing in…</> : <>Sign in as {loginRole === 'ADMIN' ? 'Admin' : loginRole === 'LIBRARIAN' ? 'Librarian' : 'Student'} <span>→</span></>}</button>
           </form>
-          <div className="login-support"><span className="lock-icon">⌑</span><span>Your account is managed by your college library.</span></div>
-          <div className="auth-switch">New to Carbonell Library? <button type="button" onClick={onCreateAccount}>Create an account</button></div>
+          <div className="login-support"><span className="lock-icon">⌑</span><span>Staff accounts are created by a library administrator.</span></div>
+          <div className="auth-switch">Need a student account? <button type="button" onClick={onCreateAccount}>Create account</button></div>
         </div>
         <div className="login-bottom"><span>© {new Date().getFullYear()} Carbonell College Library</span><span>Library services</span></div>
       </div>

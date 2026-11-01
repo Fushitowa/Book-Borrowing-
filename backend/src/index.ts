@@ -50,7 +50,7 @@ app.get('/api/health', async (_request, response) => {
 app.use((_request, response) => response.status(404).json({ error: 'The requested API route was not found.' }));
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   const code = (error as { code?: string } | null)?.code;
-  if (code === 'ER_DUP_ENTRY') {
+  if (code === '23505') {
     response.status(409).json({ error: 'That value already exists. Check for a duplicate username, email, ISBN, or barcode.' });
     return;
   }
@@ -79,7 +79,7 @@ async function startServer(): Promise<void> {
       console.log(`API server listening on http://localhost:${port}`);
     });
   } catch (error) {
-    console.error('Could not connect to the configured MySQL database.');
+    console.error('Could not connect to the configured Supabase PostgreSQL database.');
     if (error instanceof Error) {
       console.error(error.message);
     }

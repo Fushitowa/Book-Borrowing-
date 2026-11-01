@@ -4,8 +4,8 @@ import { databasePool } from '../config/database.js';
 export async function createDueSoonReminders(): Promise<void> {
   const [rows] = await databasePool.query<any[]>(
     `SELECT l.id AS loanId, l.borrower_user_id AS userId, b.title,
-        DATE_FORMAT(l.due_at, '%Y%m%d%H%i%s') AS dueKey,
-        DATE_FORMAT(l.due_at, '%b %e, %Y') AS dueDate
+        TO_CHAR(l.due_at, 'YYYYMMDDHH24MISS') AS dueKey,
+        TO_CHAR(l.due_at, 'Mon FMDD, YYYY') AS dueDate
        FROM loans l JOIN book_copies bc ON bc.id = l.copy_id JOIN books b ON b.id = bc.book_id
        JOIN users u ON u.id = l.borrower_user_id AND u.account_status = 'ACTIVE'
       WHERE l.status = 'ACTIVE' AND l.due_at >= UTC_TIMESTAMP()

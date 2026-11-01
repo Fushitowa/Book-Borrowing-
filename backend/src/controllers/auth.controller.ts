@@ -1,5 +1,4 @@
 import type { Request, Response } from 'express';
-import { timingSafeEqual } from 'node:crypto';
 import { databasePool } from '../config/database.js';
 import { hashPassword, verifyPassword } from '../services/password.service.js';
 import { clearSessionCookie, createSessionToken, setSessionCookie } from '../services/session.service.js';
@@ -8,14 +7,6 @@ import type { AuthenticatedRequest, RoleCode, SessionUser } from '../types/auth.
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const registrations = new Map<string, { count: number; resetAt: number }>();
-
-function isValidLibrarianCode(supplied: string): boolean {
-  const expectedCode = process.env.LIBRARIAN_SIGNUP_CODE;
-  if (!expectedCode) return false;
-  const expected = Buffer.from(expectedCode);
-  const actual = Buffer.from(supplied);
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
-}
 
 export async function register(request: Request, response: Response): Promise<void> {
   const ip = request.ip ?? 'unknown';
@@ -37,10 +28,12 @@ export async function register(request: Request, response: Response): Promise<vo
   const program = typeof body.program === 'string' ? body.program.trim() : '';
   const yearLevel = typeof body.yearLevel === 'string' ? body.yearLevel.trim() : '';
   const section = typeof body.section === 'string' ? body.section.trim() : '';
-  const librarianCode = typeof body.invitationCode === 'string' ? body.invitationCode : '';
-
-  if (role !== 'STUDENT' && role !== 'LIBRARIAN') {
-    response.status(400).json({ error: 'Choose Student or Librarian to create an account.' });
+  if (role === 'LIBRARIAN' || role === 'ADMIN') {
+    response.status(403).json({ error: 'Staff accounts can only be created by an administrator under User Management.' });
+    return;
+  }
+  if (role !== 'STUDENT') {
+    response.status(400).json({ error: 'Only student accounts can be created here.' });
     return;
   }
   if (!/^[a-zA-Z0-9._-]{3,80}$/.test(username) || !firstName || firstName.length > 100 || !lastName || lastName.length > 100) {
@@ -62,11 +55,6 @@ export async function register(request: Request, response: Response): Promise<vo
   registrations.set(ip, attempt && attempt.resetAt > now
     ? { count: attempt.count + 1, resetAt: attempt.resetAt }
     : { count: 1, resetAt: now + 15 * 60 * 1000 });
-  if (role === 'LIBRARIAN' && !isValidLibrarianCode(librarianCode)) {
-    response.status(403).json({ error: 'A valid librarian invitation code is required. Ask the library administrator for access.' });
-    return;
-  }
-
   const connection = await databasePool.getConnection();
   try {
     await connection.beginTransaction();
@@ -93,7 +81,7 @@ export async function register(request: Request, response: Response): Promise<vo
     response.status(201).json({ user, message: 'Your account has been created.' });
   } catch (error) {
     await connection.rollback();
-    if ((error as { code?: string } | null)?.code === 'ER_DUP_ENTRY') {
+    if ((error as { code?: string } | null)?.code === '23505') {
       response.status(409).json({
         error: role === 'STUDENT'
           ? 'That username, email, or student number is already registered.'
@@ -118,7 +106,12 @@ export async function login(request: Request, response: Response): Promise<void>
 
   const identifier = typeof request.body?.identifier === 'string' ? request.body.identifier.trim() : '';
   const password = typeof request.body?.password === 'string' ? request.body.password : '';
+  const expectedRole = request.body?.expectedRole;
   const rememberMe = request.body?.rememberMe === true;
+  if (expectedRole !== undefined && !['ADMIN', 'LIBRARIAN', 'STUDENT'].includes(expectedRole)) {
+    response.status(400).json({ error: 'Choose a valid account type.' });
+    return;
+  }
   if (!identifier || !password || identifier.length > 254 || password.length > 200) {
     response.status(400).json({ error: 'Enter your username or email and password.' });
     return;
@@ -155,6 +148,10 @@ export async function login(request: Request, response: Response): Promise<void>
   };
   if (!user.roles.length) {
     response.status(403).json({ error: 'This account has no assigned library role.' });
+    return;
+  }
+  if (expectedRole && !user.roles.includes(expectedRole as RoleCode)) {
+    response.status(403).json({ error: `This account does not have ${String(expectedRole).toLowerCase()} access.` });
     return;
   }
   setSessionCookie(response, createSessionToken(user, rememberMe), rememberMe);

@@ -1,12 +1,11 @@
 """Windows control panel for the School Library project.
 
-Uses only Python's standard library. It starts the configured MySQL Windows
-service, then the Express API, then the Vite frontend, and collects their logs.
+Uses only Python's standard library. It starts the Express API and Vite
+frontend, and checks the API's connection to Supabase PostgreSQL.
 """
 
 from __future__ import annotations
 
-import ctypes
 import json
 import os
 import queue
@@ -41,7 +40,7 @@ RED = "#ef8a7b"
 def read_local_settings(path: Path) -> dict[str, str]:
     """Read only the simple KEY=value settings needed for local health checks."""
     settings: dict[str, str] = {}
-    allowed = {"DB_HOST", "DB_PORT", "PORT"}
+    allowed = {"PORT"}
     if not path.exists():
         return settings
     for line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -64,8 +63,6 @@ class LibraryControlPanel:
         self.root.configure(bg=APP_BG)
 
         self.settings = read_local_settings(BACKEND_ENV)
-        self.db_host = self.settings.get("DB_HOST", "127.0.0.1")
-        self.db_port = self._number_setting("DB_PORT", 3306)
         self.api_port = self._number_setting("PORT", 3000)
         self.frontend_port = 5174
         self.local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -73,23 +70,19 @@ class LibraryControlPanel:
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.lock = threading.Lock()
         self.processes: dict[str, subprocess.Popen[str]] = {}
-        self.services: list[dict[str, str]] = []
-        self.service_names: dict[str, str] = {}
-        self.selected_service = tk.StringVar(value="Detecting MySQL service…")
         self.status_vars = {
-            "database": tk.StringVar(value="Checking"),
+            "database": tk.StringVar(value="Via API"),
             "backend": tk.StringVar(value="Stopped"),
             "frontend": tk.StringVar(value="Stopped"),
         }
         self.detail_vars = {
-            "database": tk.StringVar(value=f"{self.db_host}:{self.db_port}"),
+            "database": tk.StringVar(value="Supabase PostgreSQL"),
             "backend": tk.StringVar(value=f"API · localhost:{self.api_port}"),
             "frontend": tk.StringVar(value=f"Web app · localhost:{self.frontend_port}"),
         }
         self.auto_open = tk.BooleanVar(value=True)
         self._build_ui()
-        self._write_log("Control panel ready. Start All brings up the database, API, then frontend.")
-        self._run_async("discover-services", self._discover_mysql_services)
+        self._write_log("Control panel ready. Start All brings up the API and frontend; the API connects to Supabase.")
         self.root.after(150, self._drain_events)
         self.root.after(1000, self._refresh_statuses)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -141,7 +134,7 @@ class LibraryControlPanel:
         cards.pack(fill="x", pady=(13, 16))
         self.card_status_labels: dict[str, tk.Label] = {}
         cards_data = [
-            ("database", "01  DATABASE", "MySQL / MariaDB"),
+            ("database", "01  DATABASE", "Supabase PostgreSQL"),
             ("backend", "02  BACKEND API", "Express + TypeScript"),
             ("frontend", "03  FRONTEND", "React + Vite"),
         ]
@@ -154,22 +147,13 @@ class LibraryControlPanel:
             self.card_status_labels[key].pack(anchor="w")
             tk.Label(card, textvariable=self.detail_vars[key], bg=PANEL, fg="#8b9c90", font=("Segoe UI", 8)).pack(anchor="w", pady=(7, 0))
 
-        db_row = tk.Frame(main, bg=PANEL, highlightbackground=BORDER, highlightthickness=1, padx=14, pady=12)
-        db_row.pack(fill="x", pady=(0, 13))
-        tk.Label(db_row, text="MySQL Windows service", bg=PANEL, fg=INK, font=("Segoe UI Semibold", 9)).pack(side="left")
-        self.service_combo = ttk.Combobox(db_row, textvariable=self.selected_service, state="readonly", width=37)
-        self.service_combo.pack(side="left", padx=12)
-        tk.Label(db_row, text="Windows may ask for administrator approval to start MySQL.", bg=PANEL, fg=MUTED, font=("Segoe UI", 8)).pack(side="left", padx=4)
-
         controls = tk.Frame(main, bg=APP_BG)
         controls.pack(fill="x", pady=(0, 12))
         self._button(controls, "Start All", self.start_all, primary=True).pack(side="left", padx=(0, 8))
         self._button(controls, "Open Web", self.open_web, accent=True).pack(side="left", padx=(0, 8))
-        self._button(controls, "Start Database", self.start_database).pack(side="left", padx=(0, 8))
         self._button(controls, "Start API", lambda: self._run_async("start-backend", self._ensure_backend)).pack(side="left", padx=(0, 8))
         self._button(controls, "Start Frontend", self.start_frontend).pack(side="left", padx=(0, 8))
         self._button(controls, "Stop Apps", self.stop_apps).pack(side="right")
-        self._button(controls, "Stop Database", self.stop_database).pack(side="right", padx=(0, 8))
 
         bottom_row = tk.Frame(main, bg=APP_BG)
         bottom_row.pack(fill="x", pady=(0, 7))
@@ -241,8 +225,6 @@ class LibraryControlPanel:
                 kind, payload = self.events.get_nowait()
                 if kind == "log":
                     self._write_log(payload[0], payload[1])
-                elif kind == "services":
-                    self._set_services(payload)
                 elif kind == "busy":
                     self.overall_label.configure(text="WORKING" if payload else "READY", bg="#394331" if payload else "#253a2b")
                 elif kind == "status":
@@ -256,146 +238,12 @@ class LibraryControlPanel:
             pass
         self.root.after(150, self._drain_events)
 
-    def _discover_mysql_services(self) -> None:
-        script = (
-            "$items = @(Get-CimInstance Win32_Service | Where-Object { "
-            "$_.PathName -match 'mysqld[.]exe' -or $_.Name -match 'mysql|maria' -or $_.DisplayName -match 'mysql|maria' "
-            "} | Select-Object Name,DisplayName,State); "
-            "ConvertTo-Json -InputObject $items -Compress"
-        )
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        if result.returncode != 0:
-            raise RuntimeError("Could not inspect Windows services. Select the MySQL service name manually in the control panel output.")
-        payload = result.stdout.strip()
-        services = json.loads(payload) if payload else []
-        if isinstance(services, dict):
-            services = [services]
-        self.events.put(("services", services))
-
-    def _set_services(self, services: list[dict[str, Any]]) -> None:
-        self.services = [{key: str(value) for key, value in service.items()} for service in services if service.get("Name")]
-        self.service_names.clear()
-        values: list[str] = []
-        for service in self.services:
-            display = service.get("DisplayName", service["Name"])
-            name = service["Name"]
-            label = f"{display}  ({name})"
-            values.append(label)
-            self.service_names[label] = name
-        self.service_combo["values"] = values
-        if values:
-            running = next((service for service in self.services if service.get("State") == "Running"), self.services[0])
-            chosen = f"{running.get('DisplayName', running['Name'])}  ({running['Name']})"
-            self.selected_service.set(chosen)
-            self._post_log(f"Detected MySQL service: {running.get('DisplayName', running['Name'])} ({running['Name']}).", "success")
-        else:
-            self.selected_service.set("No MySQL Windows service detected")
-            self._post_log("No MySQL service was detected. Start it from Windows Services or check the MySQL installation.", "error")
-
-    def _service_state(self, service_name: str) -> str:
-        result = subprocess.run(
-            ["sc.exe", "query", service_name],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        output = (result.stdout or "") + (result.stderr or "")
-        if "RUNNING" in output:
-            return "RUNNING"
-        if "STOPPED" in output:
-            return "STOPPED"
-        if "START_PENDING" in output or "STOP_PENDING" in output:
-            return "PENDING"
-        return "UNKNOWN"
-
-    def _start_windows_service(self, service_name: str) -> None:
-        state = self._service_state(service_name)
-        if state == "RUNNING":
-            self._post_log(f"Database service {service_name} is already running.", "success")
-            return
-        self._post_log(f"Starting database service {service_name}…")
-        result = subprocess.run(
-            ["sc.exe", "start", service_name],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        output = (result.stdout or "") + (result.stderr or "")
-        if result.returncode != 0 and "1056" not in output:
-            # Starting a Windows service may need elevation. Ask Windows to show
-            # its normal UAC consent dialog rather than requiring an admin panel.
-            shell = ctypes.windll.shell32.ShellExecuteW(None, "runas", "sc.exe", f"start {service_name}", None, 0)
-            if shell <= 32:
-                raise RuntimeError("Windows did not start the database service. Approve the UAC prompt or start the service in Windows Services.")
-            self._post_log("Windows requested administrator approval. Approve the UAC prompt to continue.")
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            if self._service_state(service_name) == "RUNNING":
-                self._post_log("MySQL service is running. Waiting for the database port…", "success")
-                return
-            time.sleep(1)
-        raise RuntimeError(f"MySQL service {service_name} did not reach RUNNING state within 60 seconds. {output.strip()}")
-
-    def _stop_windows_service(self, service_name: str) -> None:
-        if self._service_state(service_name) == "STOPPED":
-            self._post_log("Database service is already stopped.")
-            return
-        result = subprocess.run(
-            ["sc.exe", "stop", service_name],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        output = (result.stdout or "") + (result.stderr or "")
-        if result.returncode != 0:
-            shell = ctypes.windll.shell32.ShellExecuteW(None, "runas", "sc.exe", f"stop {service_name}", None, 0)
-            if shell <= 32:
-                raise RuntimeError("Windows could not stop the database service. Approve the UAC prompt or stop it in Windows Services.")
-        self._post_log(f"Stop requested for database service {service_name}.")
-
     def _tcp_ready(self, host: str, port: int, timeout: float = 1.0) -> bool:
         try:
             with socket.create_connection((host, port), timeout=timeout):
                 return True
         except OSError:
             return False
-
-    def _wait_for_database(self, timeout: int = 60) -> None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._tcp_ready(self.db_host, self.db_port):
-                self.events.put(("status", ("database", "Connected")))
-                self._post_log(f"Database is accepting connections on {self.db_host}:{self.db_port}.", "success")
-                return
-            time.sleep(1)
-        raise RuntimeError(f"No database accepted a connection on {self.db_host}:{self.db_port}. Check backend/.env and the MySQL service port.")
-
-    def _ensure_database(self, service_name: str | None = None) -> None:
-        if self._tcp_ready(self.db_host, self.db_port):
-            self.events.put(("status", ("database", "Connected")))
-            self._post_log(f"Database already responds on {self.db_host}:{self.db_port}.", "success")
-            return
-        if not service_name:
-            raise RuntimeError("Select a detected MySQL service first.")
-        self._start_windows_service(service_name)
-        self._wait_for_database()
-
-    def start_database(self) -> None:
-        service_name = self.service_names.get(self.selected_service.get())
-        if not service_name and not self._tcp_ready(self.db_host, self.db_port):
-            messagebox.showerror("MySQL service not selected", "Wait for service detection or start the MySQL service from Windows Services.")
-            return
-        self._run_async("start-database", lambda: self._ensure_database(service_name))
 
     def _health_ok(self) -> bool:
         url = f"http://127.0.0.1:{self.api_port}/api/health"
@@ -480,8 +328,6 @@ class LibraryControlPanel:
         self.events.put(("status", (key, "Stopped")))
 
     def _ensure_backend(self) -> None:
-        if not self._tcp_ready(self.db_host, self.db_port):
-            raise RuntimeError("Start the database first, or use Start All.")
         self._start_process("backend", "npm run dev:backend", f"http://127.0.0.1:{self.api_port}/api/health", "Backend API", startup_timeout=90)
 
     def _ensure_frontend(self) -> None:
@@ -503,34 +349,24 @@ class LibraryControlPanel:
 
     def start_all(self) -> None:
         open_after_start = self.auto_open.get()
-        service_name = self.service_names.get(self.selected_service.get())
 
         def start_sequence() -> None:
-            database_ready = False
             backend_ready = False
             frontend_ready = False
             try:
-                self._ensure_database(service_name)
-                database_ready = True
+                self._ensure_backend()
+                backend_ready = True
             except Exception as exc:
-                self._post_log(f"Database startup failed: {exc}", "error")
-            if database_ready:
-                try:
-                    self._ensure_backend()
-                    backend_ready = True
-                except Exception as exc:
-                    self._post_log(f"Backend startup failed: {exc}", "error")
-            else:
-                self._post_log("Skipping API startup until the database is available.", "error")
+                self._post_log(f"Backend startup failed: {exc}", "error")
             try:
                 self._ensure_frontend()
                 frontend_ready = True
             except Exception as exc:
                 self._post_log(f"Frontend startup failed: {exc}", "error")
-            if database_ready and backend_ready and frontend_ready:
-                self._post_log("All project services are ready.", "success")
+            if backend_ready and frontend_ready:
+                self._post_log("API, Supabase connection, and frontend are ready.", "success")
             elif frontend_ready:
-                self._post_log("Frontend is ready. Review the earlier service errors for API or database status.", "success")
+                self._post_log("Frontend is ready. Review the earlier API or Supabase connection error.", "success")
             if open_after_start and frontend_ready:
                 self.events.put(("open-url", f"http://127.0.0.1:{self.frontend_port}"))
         self._run_async("start-all", start_sequence)
@@ -557,18 +393,6 @@ class LibraryControlPanel:
                 self.events.put(("status", (key, "Stopped")))
         self._run_async("stop-apps", stop_sequence)
 
-    def _stop_database(self, service_name: str) -> None:
-        self._stop_windows_service(service_name)
-        self.events.put(("status", ("database", "Stopped")))
-
-    def stop_database(self) -> None:
-        service_name = self.service_names.get(self.selected_service.get())
-        if not service_name:
-            messagebox.showerror("MySQL service not selected", "Wait for service detection before stopping MySQL.")
-            return
-        if messagebox.askyesno("Stop MySQL service?", "This stops the selected Windows database service. Any other apps using it will lose their connection."):
-            self._run_async("stop-database", lambda: self._stop_database(service_name))
-
     def open_web(self) -> None:
         def open_web_sequence() -> None:
             self._ensure_frontend()
@@ -581,13 +405,11 @@ class LibraryControlPanel:
         self.root.after(2500, self._refresh_statuses)
 
     def _probe_statuses(self) -> None:
-        if self._tcp_ready(self.db_host, self.db_port):
-            self.events.put(("status", ("database", "Connected")))
-        else:
-            self.events.put(("status", ("database", "Stopped")))
         if self._health_ok():
+            self.events.put(("status", ("database", "Connected")))
             self.events.put(("status", ("backend", "Running")))
         else:
+            self.events.put(("status", ("database", "Disconnected")))
             self.events.put(("status", ("backend", "Stopped")))
         if self._url_ready(
             f"http://127.0.0.1:{self.frontend_port}",

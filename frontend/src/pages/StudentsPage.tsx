@@ -32,14 +32,18 @@ export function Students({ user, notify, adminView = false, librarianView = fals
   const isAdmin = user.roles.includes('ADMIN');
   const selectedRole: AccountRole = adminView ? role : 'STUDENT';
 
-  const reload = useCallback(() => {
+  const reload = useCallback(async (searchTerm = query) => {
     setLoading(true);
-    api<{ items: Account[] }>(`/users?role=${selectedRole}&q=${encodeURIComponent(query)}`)
-      .then((result) => setItems(result.items))
-      .catch((error) => notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not load accounts.' }))
-      .finally(() => setLoading(false));
+    try {
+      const result = await api<{ items: Account[] }>(`/users?role=${selectedRole}&q=${encodeURIComponent(searchTerm)}`);
+      setItems(result.items);
+    } catch (error) {
+      notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not load accounts.' });
+    } finally {
+      setLoading(false);
+    }
   }, [selectedRole, query, notify]);
-  useEffect(reload, [reload]);
+  useEffect(() => { void reload(); }, [reload]);
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -54,8 +58,9 @@ export function Students({ user, notify, adminView = false, librarianView = fals
         yearLevel: data.get('yearLevel'), section: data.get('section'), password: data.get('password'),
       }) });
       setModal(false);
+      setQuery('');
       notify({ kind: 'success', message: `${selectedRole === 'STUDENT' ? 'Student' : 'Librarian'} account created. Share the temporary password securely.` });
-      reload();
+      await reload('');
     } catch (error) {
       notify({ kind: 'error', message: error instanceof Error ? error.message : 'Could not create the account.' });
     } finally { setSaving(false); }
@@ -78,7 +83,7 @@ export function Students({ user, notify, adminView = false, librarianView = fals
   const title = adminView ? 'User Management' : librarianView ? 'Student Records' : 'Students';
   return <>
     <div className="page-title-row"><div><div className="eyebrow">PEOPLE</div><h1>{title}</h1><p>{adminView ? 'Manage student and librarian sign-in accounts.' : 'Review student enrollment and borrowing eligibility.'}</p></div>{isAdmin && <button className="primary-button" onClick={() => setModal(true)}><span>＋</span> Add {selectedRole === 'STUDENT' ? 'student' : 'librarian'}</button>}</div>
-    {adminView && <div className="account-role-tabs" aria-label="Account type">{(['STUDENT', 'LIBRARIAN'] as const).map((item) => <button key={item} type="button" aria-pressed={role === item} className={role === item ? 'active' : ''} onClick={() => setRole(item)}>{item === 'STUDENT' ? 'Students' : 'Librarians'}</button>)}</div>}
+    {adminView && <div className="account-role-tabs" aria-label="Account type">{(['STUDENT', 'LIBRARIAN'] as const).map((item) => <button key={item} type="button" aria-pressed={role === item} className={role === item ? 'active' : ''} onClick={() => { setRole(item); setQuery(''); }}>{item === 'STUDENT' ? 'Students' : 'Librarians'}</button>)}</div>}
     <div className="catalog-summary"><div><span className="summary-icon">♙</span><span><strong>{items.length}</strong><small>{selectedRole === 'STUDENT' ? 'student accounts' : 'librarian accounts'}</small></span></div><div className="summary-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={selectedRole === 'STUDENT' ? 'Search name, student number, or program' : 'Search librarian name or username'} aria-label={`Search ${selectedRole.toLowerCase()} accounts`} /><kbd>↵</kbd></div></div>
     <section className="surface catalog-surface"><div className="section-heading"><div><h2>{selectedRole === 'STUDENT' ? 'Student directory' : 'Librarian directory'}</h2><p>Accounts are retained to preserve library activity history.</p></div><span className="results-count">{items.length} {selectedRole === 'STUDENT' ? 'students' : 'librarians'}</span></div>
       {loading ? <div className="empty-state">Loading accounts…</div> : items.length ? <div className="table-scroll"><table><thead><tr><th>{selectedRole}</th>{selectedRole === 'STUDENT' && <><th>STUDENT NUMBER</th><th>PROGRAM / YEAR / SECTION</th><th>ACTIVE LOANS</th><th>ELIGIBILITY</th></>}<th>USERNAME</th><th>STATUS</th>{isAdmin && <th>ACTION</th>}</tr></thead><tbody>{items.map((account) => <tr key={account.id}><td><div className="book-cell"><span className="student-avatar">{account.firstName[0]}{account.lastName[0]}</span><span><strong>{account.firstName} {account.lastName}</strong><small>{account.email || 'No email added'}</small></span></div></td>{selectedRole === 'STUDENT' && <><td className="mono">{account.studentNumber || '—'}</td><td>{[account.program, account.yearLevel, account.section].filter(Boolean).join(' · ') || '—'}</td><td>{account.activeLoans} / {account.maxActiveLoans ?? '—'}</td><td><StatusPill label={account.accountStatus !== 'ACTIVE' ? 'Account inactive' : account.maxActiveLoans == null ? 'Policy unavailable' : account.activeLoans >= account.maxActiveLoans ? 'Loan limit reached' : 'Eligible'} tone={account.accountStatus === 'ACTIVE' && account.maxActiveLoans != null && account.activeLoans < account.maxActiveLoans ? 'success' : 'warning'} /></td></>}<td>{account.username}</td><td><StatusPill label={account.accountStatus.toLowerCase()} tone={account.accountStatus === 'ACTIVE' ? 'success' : 'neutral'} /></td>{isAdmin && <td><button className="small-outline" disabled={busyId === account.id} onClick={() => changeStatus(account)}>{busyId === account.id ? 'Saving…' : account.accountStatus === 'ACTIVE' ? 'Disable' : 'Reactivate'}</button></td>}</tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon">♙</span><strong>No {selectedRole.toLowerCase()} accounts found</strong><span>{query ? 'Try another search.' : isAdmin ? `Add the first ${selectedRole.toLowerCase()} account to get started.` : 'Accounts will appear here when they are created.'}</span></div>}

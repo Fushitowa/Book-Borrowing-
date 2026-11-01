@@ -1,9 +1,8 @@
-import type { PoolConnection } from 'mysql2/promise';
-import { databasePool } from '../config/database.js';
+import { databasePool, type DatabaseConnection } from '../config/database.js';
 import { createNotification } from './notification.service.js';
 
 export async function assignNextReservation(
-  connection: PoolConnection,
+  connection: DatabaseConnection,
   bookId: number,
   copyId: number,
 ): Promise<number | null> {

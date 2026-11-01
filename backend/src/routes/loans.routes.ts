@@ -158,7 +158,7 @@ loansRouter.post('/:loanId/renew', requireAuth, async (request, response, next) 
     const renewalNumber = Number(renewalRows[0].total) + 1;
     await connection.execute(
       `INSERT INTO renewals (loan_id, renewal_number, renewed_by_user_id, old_due_at, new_due_at)
-       VALUES (?, ?, ?, ?, DATE_ADD(?, INTERVAL ? DAY))`,
+       VALUES (?, ?, ?, ?, (?::timestamptz + (? * INTERVAL '1 day')))`,
       [loanId, renewalNumber, auth.id, loan.dueAt, loan.dueAt, Number(policyRows[0].extensionDays)]);
     await connection.execute('UPDATE loans SET due_at = DATE_ADD(due_at, INTERVAL ? DAY) WHERE id = ?', [Number(policyRows[0].extensionDays), loanId]);
     const [dueRows] = await connection.execute<any[]>('SELECT due_at AS dueAt FROM loans WHERE id = ?', [loanId]);

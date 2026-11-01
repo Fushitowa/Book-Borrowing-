@@ -1,7 +1,7 @@
-import type { PoolConnection } from 'mysql2/promise';
+import type { DatabaseConnection } from '../config/database.js';
 
 export async function createNotification(
-  connection: PoolConnection,
+  connection: DatabaseConnection,
   userId: number,
   type: string,
   title: string,

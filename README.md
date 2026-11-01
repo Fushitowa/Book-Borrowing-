@@ -4,17 +4,16 @@
 
 The original full logo artwork is available at [`frontend/public/carbonell-library-logo.jpg`](frontend/public/carbonell-library-logo.jpg).
 
-A local school library borrowing system built with React, TypeScript, Vite, Tailwind CSS, Express, and MySQL. The catalog stores title records separately from individually barcoded copies. Circulation history is retained in MySQL.
+A school library borrowing system built with React, TypeScript, Vite, Tailwind CSS, Express, and Supabase PostgreSQL. The catalog stores title records separately from individually barcoded copies. Circulation history is retained in PostgreSQL.
 
 ## Requirements
 
 - Node.js 20 or newer and npm
 - Python 3.10 or newer with Tkinter/Tcl-Tk for the desktop control panel
-- MySQL 8.0.16+ or MariaDB 10.4+
-- The `school_library` schema imported from [`database/schema/school_library.sql`](database/schema/school_library.sql)
-- A restricted MySQL application account and local settings in `backend/.env`
+- A Supabase project with the schema from [`database/schema/school_library.sql`](database/schema/school_library.sql) applied
+- The Supabase PostgreSQL connection string and local settings in `backend/.env`
 
-Do not run the XAMPP MySQL service alongside the standalone MySQL server on the same port. Start the database service you imported `school_library` into.
+The Express backend connects directly to Supabase PostgreSQL. Use the connection string shown by **Connect** in the Supabase dashboard. The session pooler is a suitable option when your network cannot reach the direct database endpoint over IPv6.
 
 ## First-time setup
 
@@ -24,23 +23,13 @@ From the repository root in PowerShell:
 npm install
 ```
 
-The local `backend/.env` should contain `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME=school_library`. Copy `backend/.env.example` only if `.env` does not exist, then enter the dedicated `library_app` password. Add a random `AUTH_TOKEN_SECRET` of at least 32 characters. Never commit `.env` or use the MySQL root account in the application.
+The local `backend/.env` should contain `DATABASE_URL` with your Supabase PostgreSQL connection string, `DATABASE_SSL=enable`, `DATABASE_SSL_REJECT_UNAUTHORIZED=true`, and `AUTH_TOKEN_SECRET` (a random value of at least 32 characters). Copy `backend/.env.example` only if `.env` does not exist. Never commit `.env` or expose database credentials in frontend code.
 
-### Librarian invitation code
+Before starting the app, open the Supabase dashboard's SQL Editor and run [`database/schema/school_library.sql`](database/schema/school_library.sql). It creates the library tables, indexes, constraints, default roles, and student borrowing policy. The Express database role needs access to the `public` schema.
 
-Librarian self-registration requires a private invitation code. Generate one in PowerShell from the project root:
+### Account creation
 
-```powershell
-node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
-```
-
-Copy the generated value into `backend/.env` like this:
-
-```dotenv
-LIBRARIAN_SIGNUP_CODE=paste_the_generated_value_here
-```
-
-Restart the backend after changing `.env`, then share the code only with authorized librarians. Student account creation does not require an invitation code. For a librarian account created directly by the administrator, use `npm run create-librarian` instead.
+The sign-in page's **Create account** link is for student accounts. Staff cannot self-register: an administrator creates librarian accounts under **User Management → Librarians**. The first administrator is provisioned locally with the secure setup command below.
 
 Create the first administrator. The password prompt is hidden and the password is stored as a scrypt hash:
 
@@ -48,7 +37,7 @@ Create the first administrator. The password prompt is hidden and the password i
 npm run create-admin
 ```
 
-Additional librarian accounts can be created from the terminal with the same secure prompt:
+Additional librarian accounts can also be created from the terminal with the same secure prompt:
 
 ```powershell
 npm run create-librarian
@@ -56,7 +45,7 @@ npm run create-librarian
 
 ## Run the application
 
-For one-click local startup, double-click **Start Library Control Panel.bat** in the project root. The Python control panel starts the configured MySQL Windows service, waits for the API health check, starts the frontend, and can open the app automatically. See [`control_panel/README.md`](control_panel/README.md) for service permissions and controls.
+For one-click local startup, double-click **Start Library Control Panel.bat** in the project root. The Python control panel starts the API, verifies its Supabase connection through the health check, starts the frontend, and can open the app automatically. See [`control_panel/README.md`](control_panel/README.md) for controls.
 
 To start services manually, open two PowerShell windows in the project root. Start the API in the first:
 
@@ -70,12 +59,12 @@ Start Vite in the second:
 npm run dev:frontend
 ```
 
-Open the Vite URL printed in the second terminal (normally `http://localhost:5174`). The API is available at `http://localhost:3000`; `/api/health` reports whether its database check passed. Vite proxies `/api` requests to Express.
+Open the Vite URL printed in the second terminal (normally `http://localhost:5174`). The API is available at `http://localhost:3000`; `/api/health` reports whether its Supabase database check passed. Vite proxies `/api` requests to Express.
 
 ## Current workflows
 
 - HttpOnly signed-cookie sign-in and sign-out, with administrator, librarian, and student roles
-- Public student account creation and invitation-protected librarian registration; administrator accounts remain provisioned only from the local command
+- Public student account creation; only administrators can create librarian accounts, and administrator accounts are provisioned locally
 - Staff can provision students and admins can deactivate/reactivate student accounts
 - Catalog title search, normalized author/publisher/category links, and separate physical copy/barcode management
 - Optional JPG, PNG, and WebP cover images on catalog titles, with upload previews and server-side type and size checks
@@ -103,8 +92,8 @@ frontend/src/components/  Shared form, modal, notification, and status component
 frontend/src/services/    Typed fetch client with cookie credentials
 backend/src/routes/       Auth, users, books, loans, reservations, notifications, dashboard
 backend/src/services/     Password hashing, signed sessions, audit, notification, reservations
-backend/src/config/       MySQL connection pool and startup check
-database/schema/          Importable MySQL schema
+backend/src/config/       PostgreSQL connection pool and startup check
+database/schema/          Supabase PostgreSQL schema
 database/                 Schema notes, migrations, and seeds
 ```
 
@@ -121,15 +110,4 @@ See [`database/README.md`](database/README.md) for the schema, constraints, rela
 
 Administrators and librarians have separate menus and permissions. Librarians can review student records and eligibility, search the catalog, issue copies, process returns, review and decide student borrowing requests, manage reservations, inspect inventory, monitor overdue loans, and export a circulation summary. Students can browse availability, request a title with an available copy, or join the reservation queue when copies are unavailable. Librarians decide requests separately from handing over and recording a specific physical copy.
 
-Your current database already has the college profile and borrowing request table. Apply these two new migrations once before starting the updated backend:
-
-```powershell
-Get-Content -Raw -LiteralPath "database/migrations/20261029_separate_request_approval_from_issue.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
-Get-Content -Raw -LiteralPath "database/migrations/20261030_student_due_reminder_deduplication.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
-```
-
-The book-cover feature adds one nullable column to the existing `books` table. Apply this additional migration once using the MySQL administrator account (the restricted `library_app` account intentionally cannot change the schema), then restart the backend:
-
-```powershell
-Get-Content -Raw -LiteralPath "database/migrations/20261028_book_cover_image.sql" | & "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysql.exe" -h 127.0.0.1 -P 3306 -u root -p
-```
+For an existing MySQL installation, this code change does not transfer existing records automatically. Create the Supabase schema first, then migrate and verify the MySQL data before using the new backend with existing records. The old MySQL migration files are retained as historical references and must not be applied to Supabase.

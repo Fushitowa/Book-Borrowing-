@@ -21,7 +21,7 @@ import type { User } from './types';
 const adminNavItems: { id: Page; label: string; icon: string }[] = [
   { id: 'overview', label: 'Dashboard', icon: '◫' },
   { id: 'students', label: 'User Management', icon: '♙' },
-  { id: 'catalog', label: 'Book Management', icon: '▤' },
+  { id: 'catalog', label: 'Books', icon: '▤' },
   { id: 'inventory', label: 'Categories & Inventory', icon: '◇' },
   { id: 'loans', label: 'Borrowing Transactions', icon: '⇄' },
   { id: 'reservations', label: 'Reservations & Returns', icon: '⌑' },
@@ -33,7 +33,7 @@ const adminNavItems: { id: Page; label: string; icon: string }[] = [
 
 const staffNavItems: { id: Page; label: string; icon: string }[] = [
   { id: 'overview', label: 'Dashboard', icon: '◫' },
-  { id: 'catalog', label: 'Search Books', icon: '⌕' },
+  { id: 'catalog', label: 'Books', icon: '⌕' },
   { id: 'circulation', label: 'Issue / Borrow Books', icon: '⇧' },
   { id: 'loans', label: 'Process Returns', icon: '⇩' },
   { id: 'borrowing-requests', label: 'Borrowing Requests', icon: '▤' },
@@ -46,7 +46,7 @@ const staffNavItems: { id: Page; label: string; icon: string }[] = [
 
 const studentNavItems: { id: Page; label: string; icon: string }[] = [
   { id: 'student-dashboard', label: 'My Dashboard', icon: '◫' },
-  { id: 'catalog', label: 'Browse Books', icon: '⌕' },
+  { id: 'catalog', label: 'Books', icon: '⌕' },
   { id: 'loans', label: 'My Borrowed Books', icon: '▤' },
   { id: 'reservations', label: 'My Reservations', icon: '⌑' },
   { id: 'history', label: 'Borrowing History', icon: '◷' },
@@ -93,8 +93,14 @@ export default function App() {
   if (checkingSession) return <div className="boot-screen"><BrandMark /><span>Opening your library…</span></div>;
   if (!user) return <>
     {authView === 'login'
-      ? <Login onLogin={handleLogin} onCreateAccount={() => setAuthView('create-account')} />
-      : <CreateAccountPage onRegister={handleRegister} onBackToLogin={() => setAuthView('login')} />}
+      ? <Login
+          onLogin={handleLogin}
+          onCreateAccount={() => setAuthView('create-account')}
+        />
+      : <CreateAccountPage
+          onRegister={handleRegister}
+          onBackToLogin={() => setAuthView('login')}
+        />}
     <Toast notice={notice} onDismiss={() => setNotice(null)} />
   </>;
 

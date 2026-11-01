@@ -104,7 +104,7 @@ usersRouter.post('/', requireRoles('ADMIN'), async (request, response, next) => 
     response.status(201).json({ id: userId, role, message: `${role === 'STUDENT' ? 'Student' : 'Librarian'} account created.` });
   } catch (error) {
     await connection.rollback();
-    if ((error as { code?: string } | null)?.code === 'ER_DUP_ENTRY') {
+    if ((error as { code?: string } | null)?.code === '23505') {
       response.status(409).json({ error: role === 'STUDENT' ? 'That username, email, or student number is already registered.' : 'That username or email is already registered.' });
       return;
     }

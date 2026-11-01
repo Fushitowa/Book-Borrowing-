@@ -224,12 +224,12 @@ booksRouter.delete('/:bookId', requireRoles('ADMIN', 'LIBRARIAN'), async (reques
   } catch (error) {
     await connection.rollback().catch(() => undefined);
     const databaseCode = (error as { code?: string } | null)?.code;
-    if (databaseCode === 'ER_ROW_IS_REFERENCED_2') {
+    if (databaseCode === '23503') {
       response.status(409).json({ error: 'This title is linked to library activity and cannot be deleted. Keep it in the catalog to preserve those records.' });
       return;
     }
-    if (databaseCode === 'ER_TABLEACCESS_DENIED_ERROR') {
-      response.status(503).json({ error: 'The database account is missing the limited permission needed to delete unused book titles. Apply the book-delete permissions in database/migrations, then retry.' });
+    if (databaseCode === '42501') {
+      response.status(503).json({ error: 'The database role is missing permission to delete unused book titles. Review the Supabase grants, then retry.' });
       return;
     }
     next(error);

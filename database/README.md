@@ -1,114 +1,49 @@
-# School library database design
+# School library database
 
-## Scope and assumptions
+The application database is Supabase PostgreSQL. Apply [`schema/school_library.sql`](schema/school_library.sql) to a new Supabase project using its SQL Editor. The script creates the `public` schema tables, constraints, indexes, updated-at triggers, role seed rows, and default student loan policy. It does not create any administrator account.
 
-This schema is the relational foundation for a single college library. It supports administrator, librarian, and student accounts; title/edition cataloging; multiple physical copies per title; circulation, returns, renewals, title-level reservations, notifications, and audit history. It does not model fines/payments, multiple branches, enrollment history, or external identity providers because those requirements were not specified.
+## Data model
 
-A `books` row is one cataloged title/edition. Every physical item receives its own `book_copies` row and unique barcode. Availability is derived; there is no stored `available` flag or copy count that can drift from circulation data.
+The `books` table represents a title or edition. Each physical copy has its own `book_copies` row and barcode. Availability is computed from copy condition, active loans, and reservation holds rather than stored as a counter.
 
-Target the database server to **MySQL 8.0.16+ or MariaDB 10.4+**, with InnoDB and `utf8mb4`. The minimum MySQL version ensures `CHECK` constraints are enforced. Use UTC for all `DATETIME` values; `DATETIME` itself carries no timezone. The SQL is laid out for phpMyAdmin import and includes only role and default student-loan-policy seed data. It creates no administrator account. The owner imported the schema into the local MySQL server and confirmed the `school_library` database and its tables through the MySQL CLI.
+| Tables | Purpose |
+|---|---|
+| `roles`, `users`, `user_roles`, `student_profiles` | Accounts, role membership, and student details. Accounts are disabled instead of deleted. |
+| `loan_policies` | Checkout length, active loan, renewal, and reservation limits by borrower role. |
+| `publishers`, `authors`, `categories`, `books`, `book_authors`, `book_categories`, `book_copies` | Normalized title catalog and separately tracked physical copies. |
+| `loans`, `renewals`, `borrowing_requests` | Circulation history, renewal records, and approval separated from physical issue. |
+| `reservations` | FIFO title queues with a specific copy held for a student when it becomes available. |
+| `notifications`, `audit_logs` | In-app user messages and append-only audit history. |
 
-## Tables and data dictionary
+The SQL uses PostgreSQL identity columns, `TIMESTAMPTZ` values stored and interpreted in UTC, `JSONB` audit values, check constraints, and partial unique indexes for active loans and open requests. Those indexes protect against duplicate active loans per copy and duplicate pending requests per student/title. Transactions in the Express API handle cross-table circulation changes.
 
-All surrogate `id` values are `BIGINT UNSIGNED AUTO_INCREMENT`; foreign keys use the exact same type and sign. All text uses the database's `utf8mb4` character set. See [school_library.sql](schema/school_library.sql) for every column definition, index, and constraint.
+## Application connection and access
 
-For the existing local database, apply the college-profile, borrowing-request, approval/issue split, notification-deduplication, and book-cover migrations once each as documented in the project README. The approval/issue migration preserves existing approved requests that already created loans by converting them to ISSUED. New installations should import the current schema instead of running these migrations.
+Set `DATABASE_URL` in the ignored `backend/.env` to the PostgreSQL connection string from the Supabase dashboard's **Connect** dialog. The backend requires TLS by default. Do not use the `service_role` API key in this connection string; this project connects with PostgreSQL's `pg` driver rather than Supabase's REST API.
 
-| Table | Main columns and types | Purpose and key relationships |
-|---|---|---|
-| `roles` | `id BIGINT UNSIGNED`, `code VARCHAR(32)`, `name VARCHAR(80)`, `description VARCHAR(255)`, `created_at DATETIME` | Role catalog. `code` is unique. Referenced by `user_roles` and `loan_policies`. |
-| `users` | `id BIGINT UNSIGNED`, `username VARCHAR(80)`, `email VARCHAR(254) NULL`, `password_hash VARCHAR(255)`, `first_name/last_name VARCHAR(100)`, `account_status ENUM`, timestamps | Login identity and shared person data. Username and non-null email are unique. Accounts are disabled/locked instead of deleted. |
-| `user_roles` | `user_id, role_id BIGINT UNSIGNED`, `assigned_at DATETIME` | Many-to-many user-role mapping; composite PK prevents duplicate assignments. |
-| `student_profiles` | `user_id BIGINT UNSIGNED`, `student_number VARCHAR(40)`, `program VARCHAR(120)`, `year_level VARCHAR(20)`, `section VARCHAR(50)`, timestamps | College student details, one-to-one with `users`; unique student number. |
-| `loan_policies` | `id BIGINT UNSIGNED`, `borrower_role_id BIGINT UNSIGNED`, limits as `SMALLINT/TINYINT UNSIGNED`, `is_active TINYINT(1)`, timestamps | Configurable checkout period, active-loan, renewal, extension, and reservation limits per borrowing role. One policy per role. |
-| `publishers` | `id BIGINT UNSIGNED`, `name VARCHAR(180)`, `created_at DATETIME` | Normalized publisher names, referenced optionally by `books`. |
-| `authors` | `id BIGINT UNSIGNED`, `display_name VARCHAR(180)`, `created_at DATETIME` | Normalized author records, related to books through `book_authors`. |
-| `categories` | `id BIGINT UNSIGNED`, `parent_category_id BIGINT UNSIGNED NULL`, `name VARCHAR(120)`, `description VARCHAR(500)`, `created_at DATETIME` | Subject taxonomy with optional parent category. A book may have several categories. |
-| `books` | `id BIGINT UNSIGNED`, `isbn VARCHAR(20) NULL`, title/subtitle `VARCHAR(255)`, edition `VARCHAR(80)`, `publication_year SMALLINT UNSIGNED`, `language_code VARCHAR(10)`, `publisher_id BIGINT UNSIGNED NULL`, `description TEXT`, `cover_image_url VARCHAR(255) NULL`, timestamps | Catalog-level title/edition. Optional cover images are stored as generated filenames under `backend/uploads/book-covers`; the nullable path keeps existing records valid. Nullable ISBN supports books without one; unique ISBN prevents duplicate edition records where known. |
-| `book_authors` | `book_id, author_id BIGINT UNSIGNED`, `author_order SMALLINT UNSIGNED` | Many-to-many title/author relation and display order. Composite PK prevents duplicate author links; unique `(book_id, author_order)` keeps order slots distinct. |
-| `book_categories` | `book_id, category_id BIGINT UNSIGNED` | Many-to-many title/category relation; composite PK prevents duplicate assignments. |
-| `book_copies` | `id BIGINT UNSIGNED`, `book_id BIGINT UNSIGNED`, `barcode VARCHAR(80)`, `copy_status ENUM`, `shelf_location VARCHAR(100)`, `acquired_at DATE`, `notes VARCHAR(1000)`, timestamps | Individually tracked physical copies. Barcode is unique; copy status records circulation condition/lifecycle, not availability. |
-| `loans` | `id BIGINT UNSIGNED`, `copy_id/borrower_user_id BIGINT UNSIGNED`, optional reservation/staff IDs, `checked_out_at/due_at/returned_at/lost_at DATETIME`, `status ENUM`, `return_condition ENUM`, notes | One checkout history row per copy loan. FKs retain copy and borrower history. A generated unique key permits at most one `ACTIVE` loan per physical copy. |
-| `borrowing_requests` | `id/student_user_id/book_id BIGINT UNSIGNED`, status, optional student note, response reason, decision and issuer IDs, optional linked loan ID, request/decision/issue timestamps | Requests transition PENDING → APPROVED → ISSUED or PENDING → REJECTED. Approval is separate from physical issue; a generated unique key prevents duplicate pending requests by a student for a title. |
-| `renewals` | `id BIGINT UNSIGNED`, `loan_id BIGINT UNSIGNED`, `renewal_number TINYINT UNSIGNED`, actor ID, `renewed_at/old_due_at/new_due_at DATETIME`, notes | Immutable renewal history, unique renewal sequence per loan. |
-| `reservations` | `id/book_id/student_user_id BIGINT UNSIGNED`, nullable `allocated_copy_id`, `status ENUM`, request/ready/expiry/closed timestamps | Title-level queue request. A READY hold is assigned to one matching physical copy. Generated unique keys prevent duplicate active holds per student/title and two READY holds on one copy. |
-| `notifications` | `id/user_id BIGINT UNSIGNED`, `notification_type VARCHAR(40)`, title/body, `created_at/read_at DATETIME`, nullable dedupe key | In-app notifications for a user, indexed for listing/unread queries; unique per-user dedupe keys support safe due-reminder retries. |
-| `audit_logs` | `id BIGINT UNSIGNED`, nullable actor and entity IDs, action/type strings, `old_values/new_values JSON`, IP/user-agent, `created_at DATETIME` | Append-only application audit events. `entity_id` is intentionally polymorphic, so `entity_type` identifies the target table and a direct FK is not possible. |
+The Express API retains the app's existing password and signed-cookie authentication. Supabase Auth is not enabled by this migration. Browser requests continue to go through Express, so Supabase credentials remain server-side.
 
-`created_at` and `updated_at` are stored on mutable records where they aid operations. Historical `loans`, `renewals`, and `audit_logs` should not be physically deleted. `updated_at` is not used to infer business events.
+For a deployed environment, create a dedicated PostgreSQL login with only the table privileges required by the API. For example, from the SQL Editor while connected as the database administrator, replace the password placeholder with a strong secret and run:
 
-## Relationships and cardinality
-
-```mermaid
-erDiagram
-    USERS ||--o{ USER_ROLES : assigned
-    ROLES ||--o{ USER_ROLES : grants
-    USERS ||--o| STUDENT_PROFILES : has
-    ROLES ||--o| LOAN_POLICIES : configures
-    PUBLISHERS ||--o{ BOOKS : publishes
-    BOOKS ||--o{ BOOK_COPIES : has_physical_copies
-    BOOKS ||--o{ BOOK_AUTHORS : credited
-    AUTHORS ||--o{ BOOK_AUTHORS : writes
-    BOOKS ||--o{ BOOK_CATEGORIES : classified
-    CATEGORIES ||--o{ BOOK_CATEGORIES : contains
-    CATEGORIES ||--o{ CATEGORIES : parent_of
-    BOOKS ||--o{ RESERVATIONS : requested_title
-    USERS ||--o{ RESERVATIONS : places
-    BOOK_COPIES o|--o{ RESERVATIONS : allocated_to
-    BOOK_COPIES ||--o{ LOANS : loan_history
-    USERS ||--o{ LOANS : borrows
-    USERS o|--o{ LOANS : checks_out_or_in
-    RESERVATIONS o|--o| LOANS : fulfilled_by
-    LOANS ||--o{ RENEWALS : renewed
-    USERS ||--o{ NOTIFICATIONS : receives
-    USERS o|--o{ AUDIT_LOGS : acts
+```sql
+CREATE ROLE library_app LOGIN PASSWORD 'replace-with-a-strong-secret';
+GRANT CONNECT ON DATABASE postgres TO library_app;
+GRANT USAGE ON SCHEMA public TO library_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO library_app;
+GRANT DELETE ON public.books, public.book_copies TO library_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO library_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO library_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO library_app;
 ```
 
-The reservation-to-loan relationship is enforced from `loans` to `reservations`; `reservation_id` is nullable for direct checkout and unique for linked checkouts. A composite FK guarantees that a linked loan has the reservation's student as its borrower. The backend transaction must additionally ensure the checked-out copy belongs to the reservation's book.
+Use that database role in `DATABASE_URL` using the connection details from **Connect**. The SQL Editor connection is an administrator connection; do not copy its credentials into frontend code. The schema revokes direct table and sequence access for Supabase `anon` and `authenticated` roles. Add client-side data access only with suitable Row Level Security policies.
 
-## Circulation rules and data integrity
+The app uses parameterized SQL and transaction locks. The backend health endpoint runs a database query and only reports healthy when PostgreSQL is reachable. Supabase connection pooling is documented at [Supabase connection pooling](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits); use a session pooler for a long-running Express server if the direct host is not reachable from your network.
 
-- **Availability:** a copy can be checked out only when its `copy_status='IN_SERVICE'`, there is no `ACTIVE` loan for it, it has no `READY` reservation, and its title has no pending reservation queue ahead of the borrower. Compute this in the query/workflow; do not persist a second availability flag.
-- **Duplicate checkout protection:** `loans.active_copy_id` is generated as `copy_id` only for ACTIVE rows and NULL otherwise, with a unique index. MySQL/MariaDB unique indexes permit multiple NULL values. The database rejects a second active loan for that copy even if two requests race.
-- **Overdue:** derive it using `status='ACTIVE' AND due_at < UTC_TIMESTAMP()` (or a UTC timestamp supplied by the application). Do not store an `OVERDUE` status that can become stale overnight.
-- **Copy lifecycle:** use `IN_SERVICE`, `DAMAGED`, `LOST`, or `WITHDRAWN`. On a damaged return, close the loan and set the copy to DAMAGED in the same transaction; staff later reclassify it to IN_SERVICE after repair. For a lost item, close the loan as LOST, set `lost_at`, and mark the copy LOST. If later recovered, record the transition in the audit log and close the recovery as a returned loan with a condition, clearing the `lost_at` marker.
-- **Return:** update the loan to RETURNED with return time, receiving staff, and condition; update copy status; assign the copy to the earliest eligible pending reservation if the policy requires a hold. All writes happen in one transaction.
-- **Renewal:** lock the active loan row, enforce policy renewal count, reject overdue loans and renewals when a waiting reservation exists, insert a `renewals` row, and update `loans.due_at` atomically. The unique `(loan_id, renewal_number)` prevents duplicated sequence values.
-- **Reservation queue:** order eligible PENDING requests by `(requested_at, id)`. READY rows must have matching `allocated_copy_id`, `ready_at`, and `expires_at`; the composite FK verifies the assigned copy belongs to that title. On fulfillment, insert the linked loan, transition the reservation to FULFILLED, clear its copy allocation, and commit together.
-- **Policy enforcement:** the seeded STUDENT policy is a starting default (14 days, at most 3 active loans, 1 renewal of 7 days, at most 3 reservations). These are not universal school rules. The backend must select one effective borrowing role for each checkout (for example, STUDENT for a user who also has LIBRARIAN access) and enforce its policy. Concurrent checkouts should serialize on a borrower row or other stable lock target before counting active loans.
-- **Role/profile consistency:** FKs guarantee that referenced users and roles exist, but ordinary relational constraints cannot ensure that every STUDENT role has exactly one student profile. Enforce that invariant during account provisioning in one transaction.
+## Moving existing MySQL data
 
-`CHECK` constraints validate policy limits, loan timestamp/status combinations, reservation state fields, and positive due intervals. Cross-row rules such as copy status matching an active loan cannot be expressed as a portable row-level constraint here; enforce them transactionally in the backend. Avoid triggers for circulation state unless there is a clear need to duplicate application workflow inside the database.
+Changing the app connection does not copy records from an existing MySQL server. Create the Supabase schema first, export the MySQL tables, convert the data to PostgreSQL-compatible CSV/SQL, then import in foreign-key order and verify counts, users, loans, requests, and reservations before pointing the app at that project. Preserve existing password hashes only if the target `users.password_hash` values use the app's `scrypt:<salt>:<hash>` format.
 
-## Foreign-key and deletion policy
+Files under `migrations/` are historical MySQL migrations from the previous database implementation. Do not run them in Supabase. For future schema changes, add PostgreSQL migration scripts and apply them through the Supabase SQL Editor or your migration tooling.
 
-- IDs and matching FKs are all `BIGINT UNSIGNED`; relationship tables use matching type/sign on both sides.
-- Catalog, copy, borrower, loan, renewal, and reservation references use `RESTRICT` to preserve history and prevent deleting referenced records.
-- Publisher deletion sets `books.publisher_id` to NULL. Deleting a user cascades only to role assignments, student profile, and notifications; loans/reservations restrict user deletion. Normal account removal is a status change, not a DELETE.
-- Deleting a book cascades its author/category join rows and removes only uncirculated physical copies in the same transaction. Deletion is restricted when loans, borrowing requests, or reservations exist, so library history remains intact.
-- Staff attribution FKs use `SET NULL` so deactivated/removed staff do not erase circulation history. Audit actor is likewise nullable; the audit event remains.
-
-## TypeScript/mysql2 application connection
-
-The backend uses `mysql2/promise` and a bounded pool configured from `backend/.env` (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`). It uses UTC date handling and verifies database connectivity before listening. Credentials and the session signing secret belong only in the ignored `.env` file. The backend uses parameterized query values, transaction scopes for account provisioning, catalog inserts, checkout, and return, and an HttpOnly signed session cookie. The app account should not have schema administration rights. Remote deployments must also enable TLS and use a secrets manager.
-
-The application includes sign-in, role checks, catalog and copy workflows, student provisioning, role-specific dashboards, checkout, returns, renewal policy enforcement, FIFO reservation holds and expiry, borrowing-request approval separate from issue, student loan history and profile contact updates, due-date reminders, in-app notifications, and audit entries. Password reset and broader catalog editing remain follow-up work.
-
-## Security and backup guidance
-
-- Hash passwords in the backend with Argon2id or bcrypt; store only the encoded hash in `password_hash`. Do not seed a default administrator password.
-- Grant the app database account only the table-level SELECT, INSERT, and UPDATE permissions it needs. Book-title removal additionally requires narrowly scoped DELETE on books and book_copies (see migrations/20261031_book_delete_privileges.sql); keep audit_logs protected and avoid broad application DELETE grants. Schema changes belong to a separate admin account.
-- Keep secrets in an ignored `.env` file locally and a secrets manager/environment configuration in deployment. Use HTTPS, rate-limit login, and audit privileged account/role and circulation changes.
-- Restrict phpMyAdmin and XAMPP to local development; do not expose the XAMPP stack or phpMyAdmin publicly.
-- Back up with a consistent database dump (for a small school library, scheduled `mysqldump`/`mariadb-dump` plus encrypted off-machine copies is suitable). Keep multiple retention points, protect backups with least-privilege access, and periodically test restore into a separate database. A backup is not verified until restore succeeds.
-- Avoid logging password hashes, credentials, tokens, or unnecessary student personal information. Define retention limits for audit and notification records.
-
-## Design review and validation status
-
-- Catalog title and copy are separate; ISBN is nullable/unique; barcodes are unique.
-- Every FK column matches its referenced BIGINT UNSIGNED type. All FK parent keys are primary or explicit unique keys; child lookup indexes are defined.
-- Active copy loan and duplicate active student/title reservation guards are database-enforced with stored generated columns and unique indexes.
-- Reservations cannot allocate a copy belonging to another title; reservation-linked loans cannot name a different student.
-- Status enums and row-level CHECK constraints cover defined state combinations; cross-row state transitions are assigned to backend transactions.
-- No plaintext password, default admin account, stored availability count, or stored overdue flag is included.
-- The script was reviewed for dependency order and MySQL/MariaDB syntax against the stated minimum versions, and the project owner confirmed the import and expected table list. Before production use, validate the target server version and inspect `SHOW CREATE TABLE` and foreign-key metadata on that server.
+Back up the Supabase project and test restore before relying on it for school operations. Supabase provides database backups and point-in-time recovery depending on plan; see its [database overview](https://supabase.com/docs/guides/database/overview).
