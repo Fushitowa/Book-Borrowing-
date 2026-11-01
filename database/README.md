@@ -21,6 +21,8 @@ The SQL uses PostgreSQL identity columns, `TIMESTAMPTZ` values stored and interp
 
 Set `DATABASE_URL` in the ignored `backend/.env` to the PostgreSQL connection string from the Supabase dashboard's **Connect** dialog. The backend requires TLS by default. Do not use the `service_role` API key in this connection string; this project connects with PostgreSQL's `pg` driver rather than Supabase's REST API.
 
+If Node reports `SELF_SIGNED_CERT_IN_CHAIN`, download the database CA certificate from **Project Settings → Database → SSL Configuration** and save it as `backend/supabase-ca.crt`. Add `DATABASE_SSL_CA_PATH=supabase-ca.crt` to `backend/.env`. Certificate verification stays enabled. Supabase documents the CA download and verified TLS options in its [SSL enforcement guide](https://supabase.com/docs/guides/platform/ssl-enforcement).
+
 The Express API retains the app's existing password and signed-cookie authentication. Supabase Auth is not enabled by this migration. Browser requests continue to go through Express, so Supabase credentials remain server-side.
 
 For a deployed environment, create a dedicated PostgreSQL login with only the table privileges required by the API. For example, from the SQL Editor while connected as the database administrator, replace the password placeholder with a strong secret and run:

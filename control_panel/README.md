@@ -20,4 +20,4 @@ The panel reads only `PORT` from `backend/.env`. It never displays or logs the P
 - **Open Web** starts the frontend if it is stopped, waits until it responds, then opens it in the default browser.
 - **Automatically open frontend after startup** controls browser opening after Start All or Start Frontend.
 
-The database status card reflects the API health check. The panel does not manage a local database service.
+The database status card reflects the API health check. The panel does not manage a local database service. Start All reports if `DATABASE_URL` is missing, blank, or contains an HTTPS API URL instead of a PostgreSQL URI.

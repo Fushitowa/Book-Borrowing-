@@ -1,6 +1,7 @@
 node_modules/
 dist/
 backend/uploads/book-covers/
+backend/supabase-ca.crt
 coverage/
 .env
 .env.*

@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Pool, types, type PoolClient, type QueryResult } from 'pg';
 
 type DbRow = Record<string, unknown>;
@@ -10,6 +12,9 @@ const connectionString = process.env.DATABASE_URL?.trim();
 if (!connectionString) {
   throw new Error('Missing required environment variable: DATABASE_URL. Add the Supabase PostgreSQL connection string to backend/.env.');
 }
+if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) {
+  throw new Error('DATABASE_URL must be a PostgreSQL connection URI beginning with postgresql://. A Supabase https:// project or /rest/v1/ URL is not a database connection string.');
+}
 
 // Keep PostgreSQL BIGINT values numeric to match the API's existing response types.
 types.setTypeParser(20, (value) => Number(value));
@@ -17,7 +22,12 @@ types.setTypeParser(20, (value) => Number(value));
 const pool = new Pool({
   connectionString,
   max: 10,
-  ssl: process.env.DATABASE_SSL === 'disable' ? undefined : { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' },
+  ssl: process.env.DATABASE_SSL === 'disable' ? undefined : {
+    rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
+    ...(process.env.DATABASE_SSL_CA_PATH?.trim()
+      ? { ca: readFileSync(resolve(process.cwd(), process.env.DATABASE_SSL_CA_PATH.trim()), 'utf8') }
+      : {}),
+  },
   application_name: 'carbonell-school-library',
 });
 
@@ -68,11 +78,17 @@ async function run<T extends DbRow[]>(client: Pool | PoolClient, sql: string, va
   const result: QueryResult<DbRow> = await client.query(text, [...values]);
   const rows = result.rows as T;
   const firstRow = rows[0];
-  return [rows, {
+  const header: DbResult = {
     ...(returnsId && firstRow && firstRow.id !== undefined ? { insertId: Number(firstRow.id) } : {}),
     affectedRows: result.rowCount ?? 0,
     rowCount: result.rowCount ?? 0,
-  }];
+  };
+  if (/^\s*INSERT\b/i.test(sql)) {
+    // Match mysql2's tuple convention: INSERT returns its header first, while
+    // SELECT returns its rows first. Existing controllers read insertId there.
+    return [header as unknown as T, rows as unknown as DbResult];
+  }
+  return [rows, header];
 }
 
 export interface DatabaseConnection {

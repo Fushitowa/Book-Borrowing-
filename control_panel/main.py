@@ -54,6 +54,24 @@ def read_local_settings(path: Path) -> dict[str, str]:
     return settings
 
 
+def database_url_setup_error(path: Path) -> str | None:
+    """Validate the Supabase PostgreSQL URI without retaining or logging it."""
+    if not path.exists():
+        return "backend/.env is missing. Create it and add a DATABASE_URL PostgreSQL connection URI from Supabase Connect."
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            if key.strip() == "DATABASE_URL":
+                value = value.strip().strip('"').strip("'")
+                if not value:
+                    return "DATABASE_URL is blank in backend/.env. In Supabase, open Connect and copy the PostgreSQL URI into DATABASE_URL."
+                if not value.lower().startswith(("postgresql://", "postgres://")):
+                    return "DATABASE_URL must be the PostgreSQL URI from Supabase Connect (starts with postgresql://). The https:// project or /rest/v1/ URL is the REST API, not the database connection."
+                return None
+    return "DATABASE_URL is missing in backend/.env. In Supabase, open Connect and copy the PostgreSQL URI into DATABASE_URL."
+
+
 class LibraryControlPanel:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -328,6 +346,9 @@ class LibraryControlPanel:
         self.events.put(("status", (key, "Stopped")))
 
     def _ensure_backend(self) -> None:
+        setup_error = database_url_setup_error(BACKEND_ENV)
+        if setup_error:
+            raise RuntimeError(f"{setup_error} Then run database/schema/school_library.sql in the Supabase SQL Editor and start the API again.")
         self._start_process("backend", "npm run dev:backend", f"http://127.0.0.1:{self.api_port}/api/health", "Backend API", startup_timeout=90)
 
     def _ensure_frontend(self) -> None:

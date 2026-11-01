@@ -55,6 +55,7 @@ export function CreateAccountPage({ onRegister, onBackToLogin }: CreateAccountPa
       <div className="login-side register-side">
         <div className="login-side-top"><BrandMark /><span>Carbonell <b>Library</b></span></div>
         <div className="login-form-wrap register-form-wrap register-form-wide">
+          <button className="auth-back-link" type="button" onClick={onBackToLogin}>← Back to login</button>
           <div className="eyebrow">JOIN YOUR COLLEGE LIBRARY</div>
           <h1>Create student account</h1>
           <p className="login-subtitle">Create an account to browse books and manage your borrowing requests.</p>
