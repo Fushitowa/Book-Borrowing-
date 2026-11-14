@@ -160,7 +160,7 @@ booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), parseBookCover, async 
       }
       await connection.execute('INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)', [bookId, categoryId]);
     }
-    if (request.file && coverFilename) {
+    if (request.file && coverFilename && !isVercel()) {
       await mkdir(bookCoversDirectory, { recursive: true });
       storedCoverPath = resolve(bookCoversDirectory, coverFilename);
       await writeFile(storedCoverPath, request.file.buffer, { flag: 'wx' });
@@ -214,7 +214,7 @@ booksRouter.delete('/:bookId', requireRoles('ADMIN', 'LIBRARIAN'), async (reques
     const coverPrefix = `${bookCoversPublicPath}/`;
     if (coverImageUrl?.startsWith(coverPrefix)) {
       const filename = coverImageUrl.slice(coverPrefix.length);
-      if (filename && basename(filename) === filename) {
+      if (filename && basename(filename) === filename && !isVercel()) {
         await unlink(resolve(bookCoversDirectory, filename)).catch((error: { code?: string }) => {
           if (error.code !== 'ENOENT') console.error('Could not remove deleted book cover image.');
         });

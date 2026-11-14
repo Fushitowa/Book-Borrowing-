@@ -8,6 +8,7 @@
     "create-librarian": "tsx src/scripts/createAdmin.ts LIBRARIAN",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "vercel": "vercel dev",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
