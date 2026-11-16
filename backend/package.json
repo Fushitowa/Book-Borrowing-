@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/server.ts",
     "create-admin": "tsx src/scripts/createAdmin.ts",
     "create-librarian": "tsx src/scripts/createAdmin.ts LIBRARIAN",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node dist/server.js",
     "vercel": "vercel dev",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
