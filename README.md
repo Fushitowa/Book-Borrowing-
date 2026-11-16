@@ -69,8 +69,9 @@ Before deploying, run [`database/schema/school_library.sql`](database/schema/sch
 
 - `DATABASE_URL`: the Supabase PostgreSQL connection string
 - `AUTH_TOKEN_SECRET`: a random secret with at least 32 characters
+- `DATABASE_SSL_CA_PATH`: `backend/supabase-ca.crt`
 
-Vercel sets `NODE_ENV` to production, and the database connection uses TLS by default. Never add database credentials or the session secret to frontend variables or commit them to the repository. Redeploy after changing environment variables. Once deployed, check `/api/health`; it should report `"database":"connected"` before testing student account creation.
+The Supabase CA certificate at `backend/supabase-ca.crt` must be included in the repository so the Vercel function can verify the database certificate chain. Vercel sets `NODE_ENV` to production, and the database connection uses TLS by default. Keep `DATABASE_SSL_REJECT_UNAUTHORIZED` enabled (or unset); do not disable certificate verification. Never add database credentials or the session secret to frontend variables or commit them to the repository. Redeploy after changing environment variables. Once deployed, check `/api/health`; it should report `"database":"connected"` before testing student account creation.
 
 ## Current workflows
 
