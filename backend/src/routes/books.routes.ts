@@ -3,7 +3,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
-import { bookCoversDirectory, bookCoversPublicPath } from '../config/bookCovers.js';
+import { bookCoversDirectory, bookCoversPublicPath, isVercel } from '../config/bookCovers.js';
 import { databasePool } from '../config/database.js';
 import { requireAuth, requireRoles } from '../middleware/auth.middleware.js';
 import { writeAudit } from '../services/audit.service.js';
@@ -160,7 +160,7 @@ booksRouter.post('/', requireRoles('ADMIN', 'LIBRARIAN'), parseBookCover, async 
       }
       await connection.execute('INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)', [bookId, categoryId]);
     }
-    if (request.file && coverFilename && !isVercel()) {
+    if (request.file && coverFilename && bookCoversDirectory && !isVercel()) {
       await mkdir(bookCoversDirectory, { recursive: true });
       storedCoverPath = resolve(bookCoversDirectory, coverFilename);
       await writeFile(storedCoverPath, request.file.buffer, { flag: 'wx' });
@@ -214,7 +214,7 @@ booksRouter.delete('/:bookId', requireRoles('ADMIN', 'LIBRARIAN'), async (reques
     const coverPrefix = `${bookCoversPublicPath}/`;
     if (coverImageUrl?.startsWith(coverPrefix)) {
       const filename = coverImageUrl.slice(coverPrefix.length);
-      if (filename && basename(filename) === filename && !isVercel()) {
+      if (filename && basename(filename) === filename && bookCoversDirectory && !isVercel()) {
         await unlink(resolve(bookCoversDirectory, filename)).catch((error: { code?: string }) => {
           if (error.code !== 'ENOENT') console.error('Could not remove deleted book cover image.');
         });

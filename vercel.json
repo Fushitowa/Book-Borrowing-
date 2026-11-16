@@ -1,26 +1,10 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "backend/src/index.ts",
-      "use": "@vercel/ts-node"
-    },
-    {
-      "src": "frontend/package.json",
-      "use": "static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "backend/src/index.ts$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "frontend/public/$1"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "buildCommand": "npm run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/uploads/(.*)", "destination": "/api/index" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

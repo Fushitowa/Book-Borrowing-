@@ -61,6 +61,17 @@ npm run dev:frontend
 
 Open the Vite URL printed in the second terminal (normally `http://localhost:5174`). The API is available at `http://localhost:3000`; `/api/health` reports whether its Supabase database check passed. Vite proxies `/api` requests to Express.
 
+## Deploy to Vercel
+
+Import the repository root as the Vercel project. The Vercel configuration builds the frontend into `frontend/dist` and routes `/api` requests to the Express function in `api/index.ts`.
+
+Before deploying, run [`database/schema/school_library.sql`](database/schema/school_library.sql) in the Supabase SQL Editor. In the Vercel project settings, add these server-side environment variables for the environments you deploy:
+
+- `DATABASE_URL`: the Supabase PostgreSQL connection string
+- `AUTH_TOKEN_SECRET`: a random secret with at least 32 characters
+
+Vercel sets `NODE_ENV` to production, and the database connection uses TLS by default. Never add database credentials or the session secret to frontend variables or commit them to the repository. Redeploy after changing environment variables. Once deployed, check `/api/health`; it should report `"database":"connected"` before testing student account creation.
+
 ## Current workflows
 
 - HttpOnly signed-cookie sign-in and sign-out, with administrator, librarian, and student roles

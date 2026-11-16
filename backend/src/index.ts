@@ -23,7 +23,9 @@ app.use((_request, response, next) => {
 });
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5174', credentials: true }));
 app.use(express.json({ limit: '1mb' }));
-app.use(bookCoversPublicPath, express.static(bookCoversDirectory, { dotfiles: 'deny', index: false, immutable: true, maxAge: '1y' }));
+if (bookCoversDirectory) {
+  app.use(bookCoversPublicPath, express.static(bookCoversDirectory, { dotfiles: 'deny', index: false, immutable: true, maxAge: '1y' }));
+}
 
 app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
